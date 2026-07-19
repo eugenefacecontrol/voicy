@@ -30,7 +30,12 @@
             <p class="step">01 / Текст</p>
             <h2 id="editor-title">Что будем слушать?</h2>
           </div>
-          <button class="text-button" id="clearButton" type="button">Очистить</button>
+          <div class="text-actions">
+            <button class="text-button paste-button" id="pasteButton" type="button">
+              <span aria-hidden="true">＋</span> Вставить текст
+            </button>
+            <button class="text-button" id="clearButton" type="button">Очистить</button>
+          </div>
         </div>
 
         <label class="sr-only" for="textInput">Текст для озвучивания</label>
@@ -41,8 +46,17 @@
           spellcheck="true"
         ></textarea>
 
-        <div class="text-meta" aria-live="polite">
-          <span id="sectionCount">0 разделов</span>
+        <div class="text-meta">
+          <details class="sections-details" id="sectionsDetails">
+            <summary id="sectionCount">0 разделов</summary>
+            <div class="sections-popover">
+              <div class="sections-popover-head">
+                <strong>Перейти к разделу</strong>
+                <small>Таймкоды приблизительные</small>
+              </div>
+              <div class="sections-list" id="sectionsList"></div>
+            </div>
+          </details>
           <span id="characterCount">0 символов</span>
           <span id="durationEstimate">≈ 0 мин</span>
         </div>
@@ -105,6 +119,14 @@
           <button class="secondary-control" id="stopButton" type="button" disabled>
             <span aria-hidden="true">■</span> Стоп
           </button>
+          <div class="seek-controls" aria-label="Перемотка">
+            <button class="seek-button" id="rewindButton" type="button" aria-label="Назад на 10 секунд" disabled>
+              <span aria-hidden="true">↶</span> 10
+            </button>
+            <button class="seek-button" id="forwardButton" type="button" aria-label="Вперёд на 10 секунд" disabled>
+              10 <span aria-hidden="true">↷</span>
+            </button>
+          </div>
           <button class="play-control" id="playButton" type="button">
             <span id="playIcon" aria-hidden="true">▶</span>
             <span id="playLabel">Слушать</span>
