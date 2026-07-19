@@ -15,7 +15,9 @@ const elements = {
   forwardButton: document.querySelector("#forwardButton"),
   statusText: document.querySelector("#statusText"),
   sectionCount: document.querySelector("#sectionCount"),
-  sectionsDetails: document.querySelector("#sectionsDetails"),
+  sectionsPanel: document.querySelector("#sectionsPanel"),
+  sectionsBackdrop: document.querySelector("#sectionsBackdrop"),
+  sectionsClose: document.querySelector("#sectionsClose"),
   sectionsList: document.querySelector("#sectionsList"),
   characterCount: document.querySelector("#characterCount"),
   durationEstimate: document.querySelector("#durationEstimate"),
@@ -39,6 +41,8 @@ const state = {
   currentWord: 0,
   totalWords: 0,
   seekWord: null,
+  resumeWord: 0,
+  lastSavedWord: -1,
   speaking: false,
   paused: false,
   session: 0,
@@ -55,6 +59,13 @@ const storage = {
   set(key, value) {
     try {
       localStorage.setItem(`voicy:${key}`, value);
+    } catch {
+      // The app still works when storage is disabled.
+    }
+  },
+  remove(key) {
+    try {
+      localStorage.removeItem(`voicy:${key}`);
     } catch {
       // The app still works when storage is disabled.
     }
@@ -130,10 +141,64 @@ function formatTime(seconds) {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
+function fingerprint(text) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${text.length}:${hash >>> 0}`;
+}
+
+function timeForWord(word) {
+  return formatTime(word / (2.5 * state.rate));
+}
+
+function loadSavedPosition(text, totalWords) {
+  try {
+    const saved = JSON.parse(storage.get("position", "null"));
+    if (!saved || saved.fingerprint !== fingerprint(text)) return 0;
+    return Math.max(0, Math.min(Number(saved.word) || 0, Math.max(0, totalWords - 1)));
+  } catch {
+    return 0;
+  }
+}
+
+function savePosition(word, force = false) {
+  const safeWord = Math.max(0, Math.min(Math.round(word), Math.max(0, state.totalWords - 1)));
+  state.resumeWord = safeWord;
+  if (!force && Math.abs(safeWord - state.lastSavedWord) < 5) return;
+  storage.set("position", JSON.stringify({
+    fingerprint: fingerprint(elements.textInput.value),
+    word: safeWord,
+  }));
+  state.lastSavedWord = safeWord;
+}
+
+function resetSavedPosition() {
+  state.resumeWord = 0;
+  state.lastSavedWord = -1;
+  storage.remove("position");
+}
+
+function closeSections() {
+  elements.sectionsPanel.hidden = true;
+  elements.sectionsBackdrop.hidden = true;
+  elements.sectionCount.setAttribute("aria-expanded", "false");
+}
+
+function openSections() {
+  if (elements.sectionCount.disabled) return;
+  elements.sectionsPanel.hidden = false;
+  elements.sectionsBackdrop.hidden = false;
+  elements.sectionCount.setAttribute("aria-expanded", "true");
+  elements.sectionsClose.focus();
+}
+
 function renderSections(plan) {
   elements.sectionsList.innerHTML = "";
-  elements.sectionsDetails.open = false;
-  elements.sectionCount.style.pointerEvents = plan.sections.length ? "auto" : "none";
+  closeSections();
+  elements.sectionCount.disabled = !plan.sections.length;
 
   plan.sections.forEach((section) => {
     const button = document.createElement("button");
@@ -163,6 +228,7 @@ function updateTextMeta() {
   elements.sectionCount.textContent = `${sections} ${pluralize(sections, ["раздел", "раздела", "разделов"])}`;
   elements.characterCount.textContent = `${text.length} ${pluralize(text.length, ["символ", "символа", "символов"])}`;
   elements.durationEstimate.textContent = `≈ ${minutes} мин`;
+  if (!state.speaking) state.totalWords = plan.totalWords;
   renderSections(plan);
   storage.set("text", text);
 }
@@ -188,18 +254,21 @@ function setProgress(word = 0) {
   elements.progressBar.style.width = `${percent}%`;
 }
 
-function stopSpeech(message = "Остановлено") {
+function stopSpeech(message = "Остановлено", preservePosition = true) {
+  if (preservePosition && state.speaking && state.currentWord > 0) savePosition(state.currentWord, true);
+  if (!preservePosition) resetSavedPosition();
   state.session += 1;
   if (supportsSpeech) synth.cancel();
   state.speaking = false;
   state.paused = false;
   state.queue = [];
   state.queueIndex = 0;
-  state.currentWord = 0;
-  state.totalWords = 0;
+  state.currentWord = state.resumeWord;
+  state.totalWords = createQueue(elements.textInput.value).totalWords;
   state.seekWord = null;
-  setProgress();
-  updatePlayer("idle", message);
+  setProgress(state.resumeWord);
+  const resume = state.resumeWord > 0 ? ` · продолжить с ${timeForWord(state.resumeWord)}` : "";
+  updatePlayer("idle", `${message}${resume}`);
 }
 
 function speakCurrent(session) {
@@ -208,6 +277,7 @@ function speakCurrent(session) {
   if (state.queueIndex >= state.queue.length) {
     state.speaking = false;
     state.paused = false;
+    resetSavedPosition();
     elements.progressBar.style.width = "100%";
     updatePlayer("idle", "Готово — весь текст прочитан");
     return;
@@ -230,6 +300,7 @@ function speakCurrent(session) {
     if (session !== state.session) return;
     state.currentWord = item.startWord + relativeStart;
     state.seekWord = null;
+    savePosition(state.currentWord, true);
     setProgress(state.currentWord);
     updatePlayer(
       "playing",
@@ -241,12 +312,14 @@ function speakCurrent(session) {
     if (session !== state.session || event.name !== "word") return;
     const wordsBefore = spokenText.slice(0, event.charIndex).match(/\S+/g)?.length || 0;
     state.currentWord = Math.min(item.endWord, item.startWord + relativeStart + wordsBefore);
+    savePosition(state.currentWord);
     setProgress(state.currentWord);
   };
 
   utterance.onend = () => {
     if (session !== state.session || !state.speaking) return;
     state.currentWord = item.endWord;
+    savePosition(state.currentWord, true);
     state.queueIndex += 1;
     setProgress(state.currentWord);
     speakCurrent(session);
@@ -281,6 +354,7 @@ function startSpeech(startWord = 0) {
   state.seekWord = safeWord;
   state.speaking = true;
   state.paused = false;
+  savePosition(safeWord, true);
   setProgress(safeWord);
   updatePlayer("playing", "Подготавливаю выбранный фрагмент…");
   speakCurrent(state.session);
@@ -315,7 +389,7 @@ function handlePlay() {
   if (!supportsSpeech) return;
 
   if (!state.speaking) {
-    startSpeech();
+    startSpeech(state.resumeWord);
   } else if (state.paused) {
     synth.resume();
     state.paused = false;
@@ -381,6 +455,15 @@ function initialize() {
   selectFont(storage.get("font", "literary"));
   selectRate(Number(storage.get("rate", "1")) || 1);
   updateTextMeta();
+  const initialPlan = createQueue(elements.textInput.value);
+  state.totalWords = initialPlan.totalWords;
+  state.resumeWord = loadSavedPosition(elements.textInput.value, initialPlan.totalWords);
+  state.currentWord = state.resumeWord;
+  state.lastSavedWord = state.resumeWord;
+  if (state.resumeWord > 0) {
+    setProgress(state.resumeWord);
+    updatePlayer("idle", `Продолжить с ${timeForWord(state.resumeWord)}`);
+  }
 
   if (!supportsSpeech) {
     elements.voiceSelect.innerHTML = '<option value="">Браузер не поддерживает озвучивание</option>';
@@ -394,14 +477,15 @@ function initialize() {
 }
 
 elements.textInput.addEventListener("input", () => {
+  if (state.speaking) stopSpeech("Текст изменён — можно слушать заново", false);
+  else resetSavedPosition();
   updateTextMeta();
-  if (state.speaking) stopSpeech("Текст изменён — можно слушать заново");
 });
 
 elements.pasteButton.addEventListener("click", pasteText);
 
 elements.clearButton.addEventListener("click", () => {
-  stopSpeech("Текст очищен");
+  stopSpeech("Текст очищен", false);
   elements.textInput.value = "";
   updateTextMeta();
   elements.textInput.focus();
@@ -411,11 +495,20 @@ elements.playButton.addEventListener("click", handlePlay);
 elements.stopButton.addEventListener("click", () => stopSpeech());
 elements.rewindButton.addEventListener("click", () => seekBy(-10));
 elements.forwardButton.addEventListener("click", () => seekBy(10));
+elements.sectionCount.addEventListener("click", () => {
+  if (elements.sectionsPanel.hidden) openSections();
+  else closeSections();
+});
+elements.sectionsClose.addEventListener("click", closeSections);
+elements.sectionsBackdrop.addEventListener("click", closeSections);
 elements.sectionsList.addEventListener("click", (event) => {
   const button = event.target.closest(".section-jump");
   if (!button) return;
-  elements.sectionsDetails.open = false;
+  closeSections();
   startSpeech(Number(button.dataset.startWord));
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !elements.sectionsPanel.hidden) closeSections();
 });
 elements.voiceSelect.addEventListener("change", () => {
   storage.set("voice", elements.voiceSelect.value);

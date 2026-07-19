@@ -47,16 +47,26 @@
         ></textarea>
 
         <div class="text-meta">
-          <details class="sections-details" id="sectionsDetails">
-            <summary id="sectionCount">0 разделов</summary>
-            <div class="sections-popover">
+          <div class="sections-menu">
+            <button
+              class="section-count-button"
+              id="sectionCount"
+              type="button"
+              aria-expanded="false"
+              aria-controls="sectionsPanel"
+            >0 разделов</button>
+            <div class="sections-backdrop" id="sectionsBackdrop" hidden></div>
+            <div class="sections-popover" id="sectionsPanel" role="dialog" aria-labelledby="sectionsTitle" hidden>
               <div class="sections-popover-head">
-                <strong>Перейти к разделу</strong>
-                <small>Таймкоды приблизительные</small>
+                <div>
+                  <strong id="sectionsTitle">Перейти к разделу</strong>
+                  <small>Таймкоды приблизительные</small>
+                </div>
+                <button class="sections-close" id="sectionsClose" type="button" aria-label="Закрыть список разделов">×</button>
               </div>
               <div class="sections-list" id="sectionsList"></div>
             </div>
-          </details>
+          </div>
           <span id="characterCount">0 символов</span>
           <span id="durationEstimate">≈ 0 мин</span>
         </div>
