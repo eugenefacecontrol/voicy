@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Voicy — бесплатное озвучивание любого текста прямо в браузере." />
+    <meta name="theme-color" content="#f4efe7" />
+    <title>Voicy — слушай любой текст</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <a class="brand" href="./" aria-label="Voicy — на главную">
+          <span class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+          </span>
+          <span>Voicy</span>
+        </a>
+        <p class="eyebrow">Твой текст. Твой темп.</p>
+        <h1>Не читай.<br /><em>Слушай.</em></h1>
+        <p class="intro">
+          Вставь любой текст, выбери голос и включи. Всё происходит прямо в браузере — бесплатно и без загрузки текста на наш сервер.
+        </p>
+      </header>
+
+      <section class="workspace" aria-labelledby="editor-title">
+        <div class="workspace-head">
+          <div>
+            <p class="step">01 / Текст</p>
+            <h2 id="editor-title">Что будем слушать?</h2>
+          </div>
+          <button class="text-button" id="clearButton" type="button">Очистить</button>
+        </div>
+
+        <label class="sr-only" for="textInput">Текст для озвучивания</label>
+        <textarea
+          id="textInput"
+          rows="13"
+          placeholder="Вставь сюда текст из переписки, статьи или заметки…&#10;&#10;Пустая строка начнёт новый раздел."
+          spellcheck="true"
+        ></textarea>
+
+        <div class="text-meta" aria-live="polite">
+          <span id="sectionCount">0 разделов</span>
+          <span id="characterCount">0 символов</span>
+          <span id="durationEstimate">≈ 0 мин</span>
+        </div>
+      </section>
+
+      <section class="settings" aria-labelledby="settings-title">
+        <div class="settings-heading">
+          <p class="step">02 / Настройка</p>
+          <h2 id="settings-title">Как это прозвучит?</h2>
+        </div>
+
+        <div class="setting-grid">
+          <label class="field">
+            <span>Голос</span>
+            <span class="select-wrap">
+              <select id="voiceSelect" aria-describedby="voiceHint">
+                <option value="">Загрузка голосов…</option>
+              </select>
+            </span>
+            <small id="voiceHint">Список зависит от твоего устройства и браузера</small>
+          </label>
+
+          <label class="field">
+            <span>Шрифт текста</span>
+            <span class="select-wrap">
+              <select id="fontSelect">
+                <option value="literary">Литературный</option>
+                <option value="modern">Современный</option>
+                <option value="mono">Моноширинный</option>
+                <option value="system">Системный</option>
+              </select>
+            </span>
+            <small>Меняет вид текста, но не произношение</small>
+          </label>
+        </div>
+
+        <fieldset class="speed-field">
+          <legend>Скорость</legend>
+          <div class="speed-options">
+            <button class="speed-button active" type="button" data-rate="1" aria-pressed="true">1×</button>
+            <button class="speed-button" type="button" data-rate="2" aria-pressed="false">2×</button>
+            <button class="speed-button" type="button" data-rate="3" aria-pressed="false">3×</button>
+            <button class="speed-button" type="button" data-rate="4" aria-pressed="false">4×</button>
+          </div>
+        </fieldset>
+      </section>
+
+      <section class="player" aria-label="Управление воспроизведением">
+        <div class="now-playing">
+          <span class="status-dot" aria-hidden="true"></span>
+          <div>
+            <span class="status-label">Сейчас</span>
+            <strong id="statusText" aria-live="polite">Готов к воспроизведению</strong>
+          </div>
+        </div>
+
+        <div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
+
+        <div class="controls">
+          <button class="secondary-control" id="stopButton" type="button" disabled>
+            <span aria-hidden="true">■</span> Стоп
+          </button>
+          <button class="play-control" id="playButton" type="button">
+            <span id="playIcon" aria-hidden="true">▶</span>
+            <span id="playLabel">Слушать</span>
+          </button>
+        </div>
+      </section>
+
+      <p class="privacy-note">
+        <span aria-hidden="true">◉</span>
+        Текст остаётся в этом браузере. Voicy не отправляет и не хранит его на сервере.
+      </p>
+    </main>
+
+    <footer>
+      <span>Voicy</span>
+      <span>Работает на Web Speech API</span>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
