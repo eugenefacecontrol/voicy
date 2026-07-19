@@ -88,6 +88,14 @@ function getSections(text) {
     .filter(Boolean);
 }
 
+function normalizeForSpeech(text) {
+  return text
+    .replace(/\\(["'“”«»])/g, "$1")
+    .replace(/\\/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function splitLongPart(part, maxLength) {
   if (part.length <= maxLength) return [part];
 
@@ -110,7 +118,8 @@ function createQueue(text) {
   const sectionData = [];
   const queue = sections.flatMap((section, sectionIndex) => {
     const sectionStartWord = wordCursor;
-    const sentences = section.match(/[^.!?…]+(?:[.!?…]+[”»"']*|$)/gu) || [section];
+    const spokenSection = normalizeForSpeech(section);
+    const sentences = spokenSection.match(/[^.!?…]+(?:[.!?…]+[”»"']*|$)/gu) || [spokenSection];
     const parts = sentences.flatMap((sentence) => splitLongPart(sentence.trim(), 220)).filter(Boolean);
     const items = parts.map((part) => {
       const wordCount = part.match(/\S+/g)?.length || 0;
