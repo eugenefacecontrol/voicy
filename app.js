@@ -3,6 +3,10 @@ const supportsSpeech = "speechSynthesis" in window && "SpeechSynthesisUtterance"
 
 const elements = {
   textInput: document.querySelector("#textInput"),
+  textPreview: document.querySelector("#textPreview"),
+  viewModeButton: document.querySelector("#viewModeButton"),
+  viewModeIcon: document.querySelector("#viewModeIcon"),
+  viewModeLabel: document.querySelector("#viewModeLabel"),
   voiceSelect: document.querySelector("#voiceSelect"),
   fontSelect: document.querySelector("#fontSelect"),
   pasteButton: document.querySelector("#pasteButton"),
@@ -43,6 +47,8 @@ const state = {
   seekWord: null,
   resumeWord: 0,
   lastSavedWord: -1,
+  readMode: false,
+  activeSection: -1,
   speaking: false,
   paused: false,
   session: 0,
@@ -88,10 +94,19 @@ function getSections(text) {
     .filter(Boolean);
 }
 
+function getDisplaySections(text) {
+  return text
+    .trim()
+    .split(/\n\s*\n+/)
+    .map((section) => section.trim())
+    .filter(Boolean);
+}
+
 function normalizeForSpeech(text) {
   return text
-    .replace(/\\(["'“”«»])/g, "$1")
-    .replace(/\\/g, "")
+    .replace(/&(?:bsol|backslash);|&#0*92;|&#x0*5c;/giu, "")
+    .replace(/[\\＼﹨⧵∖]/gu, "")
+    .replace(/["'“”«»„‟‹›`]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -196,6 +211,53 @@ function closeSections() {
   elements.sectionCount.setAttribute("aria-expanded", "false");
 }
 
+function renderTextPreview(text) {
+  const sections = getDisplaySections(text);
+  elements.textPreview.innerHTML = "";
+
+  if (!sections.length) {
+    const empty = document.createElement("p");
+    empty.className = "preview-empty";
+    empty.textContent = "Текст пока пуст. Нажми «Редактировать» или «Вставить текст».";
+    elements.textPreview.append(empty);
+    return;
+  }
+
+  sections.forEach((section, index) => {
+    const paragraph = document.createElement("p");
+    paragraph.className = "preview-section";
+    paragraph.dataset.sectionIndex = String(index);
+    paragraph.dataset.sectionNumber = String(index + 1).padStart(2, "0");
+    paragraph.textContent = section;
+    elements.textPreview.append(paragraph);
+  });
+}
+
+function highlightSection(sectionIndex, shouldScroll = false, scrollBehavior = "smooth") {
+  elements.textPreview.querySelector(".preview-section.active")?.classList.remove("active");
+  const section = elements.textPreview.querySelector(`[data-section-index="${sectionIndex}"]`);
+  state.activeSection = section ? sectionIndex : -1;
+  if (!section) return;
+  section.classList.add("active");
+  if (shouldScroll) {
+    window.requestAnimationFrame(() => {
+      const targetTop = window.scrollY + section.getBoundingClientRect().top - (window.innerHeight * 0.32);
+      window.scrollTo({ top: Math.max(0, targetTop), behavior: scrollBehavior });
+    });
+  }
+}
+
+function setReadMode(enabled, shouldFocus = false) {
+  state.readMode = Boolean(enabled);
+  elements.textInput.hidden = state.readMode;
+  elements.textPreview.hidden = !state.readMode;
+  elements.viewModeButton.setAttribute("aria-pressed", String(state.readMode));
+  elements.viewModeIcon.textContent = state.readMode ? "✎" : "Aa";
+  elements.viewModeLabel.textContent = state.readMode ? "Редактировать" : "Читать";
+  storage.set("readMode", String(state.readMode));
+  if (!state.readMode && shouldFocus) elements.textInput.focus();
+}
+
 function openSections() {
   if (elements.sectionCount.disabled) return;
   elements.sectionsPanel.hidden = false;
@@ -217,6 +279,7 @@ function renderSections(plan) {
     button.type = "button";
     button.className = "section-jump";
     button.dataset.startWord = String(section.startWord);
+    button.dataset.sectionIndex = String(section.index);
     time.className = "section-time";
     time.textContent = formatTime(seconds);
     copy.className = "section-copy";
@@ -238,6 +301,8 @@ function updateTextMeta() {
   elements.characterCount.textContent = `${text.length} ${pluralize(text.length, ["символ", "символа", "символов"])}`;
   elements.durationEstimate.textContent = `≈ ${minutes} мин`;
   if (!state.speaking) state.totalWords = plan.totalWords;
+  renderTextPreview(text);
+  if (state.activeSection >= 0) highlightSection(state.activeSection);
   renderSections(plan);
   storage.set("text", text);
 }
@@ -311,6 +376,7 @@ function speakCurrent(session) {
     state.seekWord = null;
     savePosition(state.currentWord, true);
     setProgress(state.currentWord);
+    highlightSection(item.sectionIndex, state.readMode, "auto");
     updatePlayer(
       "playing",
       `Раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
@@ -386,7 +452,7 @@ async function pasteText() {
     const end = elements.textInput.selectionEnd;
     elements.textInput.setRangeText(clipboardText, start, end, "end");
     elements.textInput.dispatchEvent(new Event("input", { bubbles: true }));
-    elements.textInput.focus();
+    setReadMode(true);
     updatePlayer("idle", "Текст вставлен и сохранён");
   } catch {
     elements.textInput.focus();
@@ -469,6 +535,10 @@ function initialize() {
   state.resumeWord = loadSavedPosition(elements.textInput.value, initialPlan.totalWords);
   state.currentWord = state.resumeWord;
   state.lastSavedWord = state.resumeWord;
+  const savedMode = storage.get("readMode");
+  setReadMode(savedMode ? savedMode === "true" : Boolean(elements.textInput.value.trim()));
+  const resumeItem = initialPlan.queue.find((item) => state.resumeWord < item.endWord);
+  if (resumeItem) highlightSection(resumeItem.sectionIndex);
   if (state.resumeWord > 0) {
     setProgress(state.resumeWord);
     updatePlayer("idle", `Продолжить с ${timeForWord(state.resumeWord)}`);
@@ -492,12 +562,15 @@ elements.textInput.addEventListener("input", () => {
 });
 
 elements.pasteButton.addEventListener("click", pasteText);
+elements.viewModeButton.addEventListener("click", () => {
+  setReadMode(!state.readMode, state.readMode);
+});
 
 elements.clearButton.addEventListener("click", () => {
   stopSpeech("Текст очищен", false);
   elements.textInput.value = "";
   updateTextMeta();
-  elements.textInput.focus();
+  setReadMode(false, true);
 });
 
 elements.playButton.addEventListener("click", handlePlay);
@@ -514,6 +587,8 @@ elements.sectionsList.addEventListener("click", (event) => {
   const button = event.target.closest(".section-jump");
   if (!button) return;
   closeSections();
+  setReadMode(true);
+  highlightSection(Number(button.dataset.sectionIndex), true, "auto");
   startSpeech(Number(button.dataset.startWord));
 });
 document.addEventListener("keydown", (event) => {

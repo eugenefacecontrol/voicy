@@ -31,6 +31,10 @@
             <h2 id="editor-title">Что будем слушать?</h2>
           </div>
           <div class="text-actions">
+            <button class="mode-button" id="viewModeButton" type="button" aria-pressed="false">
+              <span id="viewModeIcon" aria-hidden="true">Aa</span>
+              <span id="viewModeLabel">Читать</span>
+            </button>
             <button class="text-button paste-button" id="pasteButton" type="button">
               <span aria-hidden="true">＋</span> Вставить текст
             </button>
@@ -45,6 +49,7 @@
           placeholder="Вставь сюда текст из переписки, статьи или заметки…&#10;&#10;Пустая строка начнёт новый раздел."
           spellcheck="true"
         ></textarea>
+        <div class="text-preview" id="textPreview" aria-label="Текст для чтения" tabindex="0" hidden></div>
 
         <div class="text-meta">
           <div class="sections-menu">

@@ -172,6 +172,32 @@ h2 {
   gap: 22px;
 }
 
+.mode-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 11px;
+  color: var(--ink);
+  background: rgba(255, 250, 242, 0.72);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mode-button:hover,
+.mode-button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: white;
+}
+
+#viewModeIcon {
+  font-family: Georgia, serif;
+  font-size: 0.86rem;
+}
+
 .paste-button {
   border-bottom-color: var(--accent);
   color: var(--accent-dark);
@@ -195,6 +221,56 @@ textarea {
 }
 
 textarea::placeholder {
+  color: #aaa196;
+}
+
+.text-preview {
+  width: 100%;
+  min-height: 330px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: clamp(22px, 4vw, 38px);
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-family: var(--font-editor);
+  font-size: clamp(1.08rem, 2vw, 1.28rem);
+  line-height: 1.75;
+  user-select: text;
+}
+
+.preview-section {
+  position: relative;
+  margin: 0 0 1.5em;
+  border-left: 3px solid transparent;
+  padding: 7px 10px 7px 18px;
+  white-space: pre-wrap;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.preview-section:last-child {
+  margin-bottom: 0;
+}
+
+.preview-section::before {
+  position: absolute;
+  top: 10px;
+  left: 5px;
+  color: #aaa196;
+  content: attr(data-section-number);
+  font-family: "DM Mono", monospace;
+  font-size: 0.5rem;
+  line-height: 1;
+  transform: translateX(-100%);
+}
+
+.preview-section.active {
+  border-left-color: var(--accent);
+  background: rgba(255, 92, 53, 0.1);
+}
+
+.preview-empty {
+  margin: 0;
   color: #aaa196;
 }
 
@@ -717,6 +793,15 @@ footer {
 
   textarea {
     min-height: 290px;
+  }
+
+  .text-preview {
+    min-height: 290px;
+    padding: 24px 19px;
+  }
+
+  .preview-section {
+    padding-left: 16px;
   }
 
   footer {
