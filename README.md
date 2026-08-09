@@ -84,4 +84,4 @@ npx wrangler kv namespace create VOICY_SHARES
 npx wrangler deploy
 ```
 
-Полученный адрес вида `https://voicy-share.<subdomain>.workers.dev` нужно записать в `index.html` в метатег `voicy-share-api`. После push GitHub Pages начнёт создавать короткие ссылки. Код API находится в `worker/index.js`; записи автоматически удаляются через 30 дней.
+Worker опубликован по адресу [https://voicy-share.eugenefacecontrol.workers.dev](https://voicy-share.eugenefacecontrol.workers.dev) и записан в `index.html` в метатег `voicy-share-api`. Код API находится в `worker/index.js`; записи автоматически удаляются через 30 дней.
