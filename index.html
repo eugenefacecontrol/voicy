@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Voicy — бесплатное озвучивание любого текста прямо в браузере." />
     <meta name="theme-color" content="#f4efe7" />
+    <meta name="voicy-share-api" content="" />
     <title>Voicy — слушай любой текст</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -20,7 +21,7 @@
         <p class="eyebrow">Твой текст. Твой темп.</p>
         <h1>Не читай.<br /><em>Слушай.</em></h1>
         <p class="intro">
-          Вставь любой текст, выбери голос и включи. Всё происходит прямо в браузере — бесплатно и без загрузки текста на наш сервер.
+          Вставь любой текст, выбери голос и включи. Озвучивание работает прямо в браузере — бесплатно и без платного API.
         </p>
       </header>
 
@@ -31,6 +32,10 @@
             <h2 id="editor-title">Что будем слушать?</h2>
           </div>
           <div class="text-actions">
+            <button class="mode-button share-trigger" id="shareButton" type="button">
+              <span aria-hidden="true">↗</span>
+              <span>Поделиться</span>
+            </button>
             <button class="mode-button" id="viewModeButton" type="button" aria-pressed="false">
               <span id="viewModeIcon" aria-hidden="true">Aa</span>
               <span id="viewModeLabel">Читать</span>
@@ -76,6 +81,45 @@
           <span id="durationEstimate">≈ 0 мин</span>
         </div>
       </section>
+
+      <div class="share-backdrop" id="shareBackdrop" hidden></div>
+      <section class="share-dialog" id="shareDialog" role="dialog" aria-modal="true" aria-labelledby="shareTitle" hidden>
+        <div class="share-dialog-head">
+          <div>
+            <p class="step">Поделиться</p>
+            <h2 id="shareTitle">Как отправить текст?</h2>
+          </div>
+          <button class="sections-close" id="shareClose" type="button" aria-label="Закрыть меню публикации">×</button>
+        </div>
+
+        <div class="share-options">
+          <button class="share-option primary" id="shareCloudButton" type="button">
+            <span class="share-option-icon" aria-hidden="true">☁</span>
+            <span>
+              <strong>Короткая ссылка</strong>
+              <small>Зашифровано · хранится 30 дней в Cloudflare KV</small>
+            </span>
+            <span aria-hidden="true">→</span>
+          </button>
+
+          <button class="share-option" id="shareInlineButton" type="button">
+            <span class="share-option-icon" aria-hidden="true">⌁</span>
+            <span>
+              <strong>Ссылка без сервера</strong>
+              <small>Весь сжатый текст находится внутри ссылки</small>
+            </span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+
+        <p class="share-status" id="shareStatus" aria-live="polite"></p>
+      </section>
+
+      <button class="floating-sections" id="floatingSectionsButton" type="button" aria-expanded="false" aria-controls="sectionsPanel" hidden>
+        <span aria-hidden="true">☷</span>
+        <span>Разделы</span>
+        <strong id="floatingSectionCount">0</strong>
+      </button>
 
       <section class="settings" aria-labelledby="settings-title">
         <div class="settings-heading">
@@ -151,7 +195,7 @@
 
       <p class="privacy-note">
         <span aria-hidden="true">◉</span>
-        Текст остаётся в этом браузере. Voicy не отправляет и не хранит его на сервере.
+        Обычный текст остаётся в браузере. При создании короткой ссылки в KV отправляется только зашифрованный пакет.
       </p>
     </main>
 

@@ -1,5 +1,7 @@
 const synth = window.speechSynthesis;
 const supportsSpeech = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+const shareApiUrl = document.querySelector('meta[name="voicy-share-api"]')?.content.replace(/\/$/, "") || "";
+const maxInlineShareUrlLength = 8000;
 
 const elements = {
   textInput: document.querySelector("#textInput"),
@@ -10,6 +12,13 @@ const elements = {
   voiceSelect: document.querySelector("#voiceSelect"),
   fontSelect: document.querySelector("#fontSelect"),
   pasteButton: document.querySelector("#pasteButton"),
+  shareButton: document.querySelector("#shareButton"),
+  shareDialog: document.querySelector("#shareDialog"),
+  shareBackdrop: document.querySelector("#shareBackdrop"),
+  shareClose: document.querySelector("#shareClose"),
+  shareCloudButton: document.querySelector("#shareCloudButton"),
+  shareInlineButton: document.querySelector("#shareInlineButton"),
+  shareStatus: document.querySelector("#shareStatus"),
   clearButton: document.querySelector("#clearButton"),
   playButton: document.querySelector("#playButton"),
   playIcon: document.querySelector("#playIcon"),
@@ -23,6 +32,8 @@ const elements = {
   sectionsBackdrop: document.querySelector("#sectionsBackdrop"),
   sectionsClose: document.querySelector("#sectionsClose"),
   sectionsList: document.querySelector("#sectionsList"),
+  floatingSectionsButton: document.querySelector("#floatingSectionsButton"),
+  floatingSectionCount: document.querySelector("#floatingSectionCount"),
   characterCount: document.querySelector("#characterCount"),
   durationEstimate: document.querySelector("#durationEstimate"),
   progressBar: document.querySelector("#progressBar"),
@@ -109,6 +120,181 @@ function normalizeForSpeech(text) {
     .replace(/["'“”«»„‟‹›`]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function base64UrlToBytes(value) {
+  const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
+  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+async function compressText(text) {
+  if (!("CompressionStream" in window)) throw new Error("Этот браузер не поддерживает сжатие ссылок");
+  const stream = new Blob([new TextEncoder().encode(text)])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function decompressText(bytes) {
+  if (!("DecompressionStream" in window)) throw new Error("Этот браузер не поддерживает распаковку ссылки");
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new TextDecoder().decode(await new Response(stream).arrayBuffer());
+}
+
+async function encryptBytes(bytes) {
+  const rawKey = crypto.getRandomValues(new Uint8Array(32));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["encrypt"]);
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, bytes));
+  const packet = new Uint8Array(1 + iv.length + ciphertext.length);
+  packet[0] = 1;
+  packet.set(iv, 1);
+  packet.set(ciphertext, 13);
+  return { packet, rawKey };
+}
+
+async function decryptBytes(packet, rawKey) {
+  if (packet.length < 30 || packet[0] !== 1) throw new Error("Неизвестный формат зашифрованной ссылки");
+  const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["decrypt"]);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: packet.slice(1, 13) },
+    key,
+    packet.slice(13),
+  );
+  return new Uint8Array(plaintext);
+}
+
+function baseShareUrl() {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  return url;
+}
+
+function setShareStatus(message = "", type = "") {
+  elements.shareStatus.textContent = message;
+  elements.shareStatus.className = `share-status${type ? ` ${type}` : ""}`;
+}
+
+function setShareBusy(busy) {
+  elements.shareCloudButton.disabled = busy || !shareApiUrl;
+  elements.shareInlineButton.disabled = busy;
+  elements.shareClose.disabled = busy;
+}
+
+function openShareDialog() {
+  if (!elements.textInput.value.trim()) {
+    updatePlayer("idle", "Сначала вставь текст");
+    return;
+  }
+  setShareStatus(shareApiUrl ? "" : "Короткая ссылка станет доступна после подключения Cloudflare Worker.");
+  elements.shareBackdrop.hidden = false;
+  elements.shareDialog.hidden = false;
+  elements.shareCloudButton.disabled = !shareApiUrl;
+  elements.shareClose.focus();
+}
+
+function closeShareDialog() {
+  if (elements.shareClose.disabled) return;
+  elements.shareBackdrop.hidden = true;
+  elements.shareDialog.hidden = true;
+  setShareStatus();
+}
+
+async function presentShareUrl(url, title) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, url });
+      setShareStatus("Ссылка отправлена.", "success");
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setShareStatus("Отправка отменена.");
+        return;
+      }
+    }
+  }
+
+  if (!navigator.clipboard?.writeText) throw new Error("Не удалось открыть меню отправки или скопировать ссылку");
+  await navigator.clipboard.writeText(url);
+  setShareStatus("Ссылка скопирована в буфер обмена.", "success");
+}
+
+async function createInlineShare() {
+  setShareBusy(true);
+  setShareStatus("Сжимаю текст…");
+  try {
+    const compressed = await compressText(elements.textInput.value);
+    const url = baseShareUrl();
+    url.hash = new URLSearchParams({ v: "1", text: bytesToBase64Url(compressed) }).toString();
+    if (url.href.length > maxInlineShareUrlLength) {
+      throw new Error(`После сжатия ссылка занимает ${url.href.length.toLocaleString("ru-RU")} символов. Используй короткую ссылку.`);
+    }
+    await presentShareUrl(url.href, "Текст в Voicy");
+  } catch (error) {
+    setShareStatus(error.message || "Не удалось создать ссылку", "error");
+  } finally {
+    setShareBusy(false);
+  }
+}
+
+async function createCloudShare() {
+  if (!shareApiUrl) return;
+  setShareBusy(true);
+  setShareStatus("Сжимаю и шифрую текст…");
+  try {
+    const compressed = await compressText(elements.textInput.value);
+    const { packet, rawKey } = await encryptBytes(compressed);
+    const response = await fetch(`${shareApiUrl}/shares`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: bytesToBase64Url(packet) }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.id) throw new Error(result.error || "Cloudflare не сохранил текст");
+
+    const url = baseShareUrl();
+    url.searchParams.set("share", result.id);
+    url.hash = new URLSearchParams({ key: bytesToBase64Url(rawKey) }).toString();
+    await presentShareUrl(url.href, "Зашифрованный текст в Voicy");
+  } catch (error) {
+    setShareStatus(error.message || "Не удалось создать короткую ссылку", "error");
+  } finally {
+    setShareBusy(false);
+  }
+}
+
+async function loadSharedTextFromUrl() {
+  const hash = new URLSearchParams(window.location.hash.slice(1));
+  const cloudId = new URLSearchParams(window.location.search).get("share");
+
+  if (cloudId) {
+    if (!shareApiUrl) throw new Error("Cloudflare API ещё не подключён");
+    const keyValue = hash.get("key");
+    if (!keyValue) throw new Error("В короткой ссылке отсутствует ключ расшифровки");
+    const response = await fetch(`${shareApiUrl}/shares/${encodeURIComponent(cloudId)}`);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.data) throw new Error(result.error || "Текст не найден или уже удалён");
+    const compressed = await decryptBytes(base64UrlToBytes(result.data), base64UrlToBytes(keyValue));
+    return decompressText(compressed);
+  }
+
+  if (hash.get("v") === "1" && hash.get("text")) {
+    return decompressText(base64UrlToBytes(hash.get("text")));
+  }
+
+  return null;
 }
 
 function splitLongPart(part, maxLength) {
@@ -209,6 +395,7 @@ function closeSections() {
   elements.sectionsPanel.hidden = true;
   elements.sectionsBackdrop.hidden = true;
   elements.sectionCount.setAttribute("aria-expanded", "false");
+  elements.floatingSectionsButton.setAttribute("aria-expanded", "false");
 }
 
 function renderTextPreview(text) {
@@ -263,6 +450,7 @@ function openSections() {
   elements.sectionsPanel.hidden = false;
   elements.sectionsBackdrop.hidden = false;
   elements.sectionCount.setAttribute("aria-expanded", "true");
+  elements.floatingSectionsButton.setAttribute("aria-expanded", "true");
   elements.sectionsClose.focus();
 }
 
@@ -270,6 +458,8 @@ function renderSections(plan) {
   elements.sectionsList.innerHTML = "";
   closeSections();
   elements.sectionCount.disabled = !plan.sections.length;
+  elements.floatingSectionsButton.hidden = !plan.sections.length;
+  elements.floatingSectionCount.textContent = String(plan.sections.length);
 
   plan.sections.forEach((section) => {
     const button = document.createElement("button");
@@ -525,8 +715,20 @@ function selectFont(font) {
   storage.set("font", selected);
 }
 
-function initialize() {
-  elements.textInput.value = storage.get("text");
+async function initialize() {
+  let sharedText = null;
+  let shareLoadError = "";
+  try {
+    sharedText = await loadSharedTextFromUrl();
+  } catch (error) {
+    shareLoadError = error.message || "Не удалось открыть общую ссылку";
+  }
+
+  elements.textInput.value = sharedText ?? storage.get("text");
+  if (sharedText !== null) {
+    resetSavedPosition();
+    storage.set("readMode", "true");
+  }
   selectFont(storage.get("font", "literary"));
   selectRate(Number(storage.get("rate", "1")) || 1);
   updateTextMeta();
@@ -542,6 +744,10 @@ function initialize() {
   if (state.resumeWord > 0) {
     setProgress(state.resumeWord);
     updatePlayer("idle", `Продолжить с ${timeForWord(state.resumeWord)}`);
+  } else if (sharedText !== null) {
+    updatePlayer("idle", "Общий текст загружен — можно слушать");
+  } else if (shareLoadError) {
+    updatePlayer("idle", shareLoadError);
   }
 
   if (!supportsSpeech) {
@@ -562,6 +768,11 @@ elements.textInput.addEventListener("input", () => {
 });
 
 elements.pasteButton.addEventListener("click", pasteText);
+elements.shareButton.addEventListener("click", openShareDialog);
+elements.shareClose.addEventListener("click", closeShareDialog);
+elements.shareBackdrop.addEventListener("click", closeShareDialog);
+elements.shareInlineButton.addEventListener("click", createInlineShare);
+elements.shareCloudButton.addEventListener("click", createCloudShare);
 elements.viewModeButton.addEventListener("click", () => {
   setReadMode(!state.readMode, state.readMode);
 });
@@ -581,6 +792,10 @@ elements.sectionCount.addEventListener("click", () => {
   if (elements.sectionsPanel.hidden) openSections();
   else closeSections();
 });
+elements.floatingSectionsButton.addEventListener("click", () => {
+  if (elements.sectionsPanel.hidden) openSections();
+  else closeSections();
+});
 elements.sectionsClose.addEventListener("click", closeSections);
 elements.sectionsBackdrop.addEventListener("click", closeSections);
 elements.sectionsList.addEventListener("click", (event) => {
@@ -593,6 +808,7 @@ elements.sectionsList.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !elements.sectionsPanel.hidden) closeSections();
+  if (event.key === "Escape" && !elements.shareDialog.hidden) closeShareDialog();
 });
 elements.voiceSelect.addEventListener("change", () => {
   storage.set("voice", elements.voiceSelect.value);
@@ -607,4 +823,4 @@ window.addEventListener("beforeunload", () => {
   if (supportsSpeech) synth.cancel();
 });
 
-initialize();
+initialize().catch(() => updatePlayer("idle", "Не удалось запустить Voicy"));
