@@ -497,6 +497,45 @@ textarea::placeholder {
   background: var(--ink);
 }
 
+.share-result {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.share-result label {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.share-result input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 11px 12px;
+  color: var(--ink);
+  background: white;
+  font-family: "DM Mono", monospace;
+  font-size: 0.68rem;
+}
+
+.share-result-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.share-result-actions button {
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  padding: 10px 12px;
+  color: white;
+  background: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
 .share-status {
   min-height: 1.4em;
   margin: 18px 2px 0;
@@ -941,6 +980,14 @@ footer {
     width: auto;
     max-height: min(82vh, 620px);
     transform: none;
+  }
+
+  .share-result {
+    grid-template-columns: 1fr;
+  }
+
+  .share-result-actions button {
+    flex: 1;
   }
 
   .sections-popover {

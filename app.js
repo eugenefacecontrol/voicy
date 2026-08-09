@@ -18,6 +18,10 @@ const elements = {
   shareClose: document.querySelector("#shareClose"),
   shareCloudButton: document.querySelector("#shareCloudButton"),
   shareInlineButton: document.querySelector("#shareInlineButton"),
+  shareResult: document.querySelector("#shareResult"),
+  shareUrl: document.querySelector("#shareUrl"),
+  shareSendButton: document.querySelector("#shareSendButton"),
+  shareCopyButton: document.querySelector("#shareCopyButton"),
   shareStatus: document.querySelector("#shareStatus"),
   clearButton: document.querySelector("#clearButton"),
   playButton: document.querySelector("#playButton"),
@@ -64,6 +68,8 @@ const state = {
   paused: false,
   session: 0,
 };
+
+let preparedShare = null;
 
 const storage = {
   get(key, fallback = "") {
@@ -198,6 +204,9 @@ function openShareDialog() {
     updatePlayer("idle", "Сначала вставь текст");
     return;
   }
+  preparedShare = null;
+  elements.shareResult.hidden = true;
+  elements.shareUrl.value = "";
   setShareStatus(shareApiUrl ? "" : "Короткая ссылка станет доступна после подключения Cloudflare Worker.");
   elements.shareBackdrop.hidden = false;
   elements.shareDialog.hidden = false;
@@ -212,10 +221,36 @@ function closeShareDialog() {
   setShareStatus();
 }
 
-async function presentShareUrl(url, title) {
+function prepareShareUrl(url, title) {
+  preparedShare = { url, title };
+  elements.shareUrl.value = url;
+  elements.shareResult.hidden = false;
+}
+
+async function copyPreparedShare() {
+  if (!preparedShare) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(preparedShare.url);
+    } else {
+      elements.shareUrl.focus();
+      elements.shareUrl.select();
+      elements.shareUrl.setSelectionRange(0, preparedShare.url.length);
+      if (!document.execCommand("copy")) throw new Error();
+    }
+    setShareStatus("Ссылка скопирована в буфер обмена.", "success");
+  } catch {
+    elements.shareUrl.focus();
+    elements.shareUrl.select();
+    setShareStatus("Выделил ссылку — нажми «Копировать» в меню браузера.");
+  }
+}
+
+async function sendPreparedShare() {
+  if (!preparedShare) return;
   if (navigator.share) {
     try {
-      await navigator.share({ title, url });
+      await navigator.share(preparedShare);
       setShareStatus("Ссылка отправлена.", "success");
       return;
     } catch (error) {
@@ -223,12 +258,18 @@ async function presentShareUrl(url, title) {
         setShareStatus("Отправка отменена.");
         return;
       }
+      setShareStatus("Меню отправки не открылось — ссылку можно скопировать ниже.");
+      return;
     }
   }
 
-  if (!navigator.clipboard?.writeText) throw new Error("Не удалось открыть меню отправки или скопировать ссылку");
-  await navigator.clipboard.writeText(url);
-  setShareStatus("Ссылка скопирована в буфер обмена.", "success");
+  await copyPreparedShare();
+}
+
+async function presentShareUrl(url, title) {
+  prepareShareUrl(url, title);
+  setShareStatus("Ссылка готова. Можно отправить или скопировать.", "success");
+  await sendPreparedShare();
 }
 
 async function createInlineShare() {
@@ -773,6 +814,8 @@ elements.shareClose.addEventListener("click", closeShareDialog);
 elements.shareBackdrop.addEventListener("click", closeShareDialog);
 elements.shareInlineButton.addEventListener("click", createInlineShare);
 elements.shareCloudButton.addEventListener("click", createCloudShare);
+elements.shareSendButton.addEventListener("click", sendPreparedShare);
+elements.shareCopyButton.addEventListener("click", copyPreparedShare);
 elements.viewModeButton.addEventListener("click", () => {
   setReadMode(!state.readMode, state.readMode);
 });

@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=3" />
   </head>
   <body>
     <main class="shell">
@@ -112,6 +112,15 @@
           </button>
         </div>
 
+        <div class="share-result" id="shareResult" hidden>
+          <label for="shareUrl">Готовая ссылка</label>
+          <input id="shareUrl" type="url" readonly />
+          <div class="share-result-actions">
+            <button id="shareSendButton" type="button">Отправить</button>
+            <button id="shareCopyButton" type="button">Копировать</button>
+          </div>
+        </div>
+
         <p class="share-status" id="shareStatus" aria-live="polite"></p>
       </section>
 
@@ -204,6 +213,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=3"></script>
   </body>
 </html>
