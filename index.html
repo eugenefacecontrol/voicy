@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=3" />
+    <link rel="stylesheet" href="styles.css?v=4" />
   </head>
   <body>
     <main class="shell">
@@ -137,15 +137,28 @@
         </div>
 
         <div class="setting-grid">
-          <label class="field">
+          <div class="field voice-field">
             <span>Голос</span>
-            <span class="select-wrap">
-              <select id="voiceSelect" aria-describedby="voiceHint">
-                <option value="">Загрузка голосов…</option>
-              </select>
-            </span>
-            <small id="voiceHint">Список зависит от твоего устройства и браузера</small>
-          </label>
+            <button class="voice-picker-button" id="voicePickerButton" type="button" aria-expanded="false" aria-controls="voicePickerPanel">
+              <span>
+                <strong id="voicePickerName">Загрузка голосов…</strong>
+                <small id="voicePickerMeta">Системные и Fish Audio</small>
+              </span>
+              <span aria-hidden="true">↓</span>
+            </button>
+            <div class="voice-picker-panel" id="voicePickerPanel" hidden>
+              <label class="voice-search-wrap">
+                <span class="sr-only">Поиск голоса или языка</span>
+                <input id="voiceSearch" type="search" placeholder="Голос, звезда или язык…" autocomplete="off" />
+              </label>
+              <div class="voice-options" id="voiceOptions" role="listbox"></div>
+              <p class="voice-search-status" id="voiceSearchStatus" aria-live="polite"></p>
+            </div>
+            <select id="voiceSelect" class="sr-only" tabindex="-1" aria-hidden="true">
+              <option value="">Загрузка голосов…</option>
+            </select>
+            <small id="voiceHint">Fish‑голоса появляются только при доступе к бесплатной модели</small>
+          </div>
 
           <label class="field">
             <span>Шрифт текста</span>
@@ -213,6 +226,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=4"></script>
   </body>
 </html>

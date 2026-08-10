@@ -10,6 +10,14 @@ const elements = {
   viewModeIcon: document.querySelector("#viewModeIcon"),
   viewModeLabel: document.querySelector("#viewModeLabel"),
   voiceSelect: document.querySelector("#voiceSelect"),
+  voicePickerButton: document.querySelector("#voicePickerButton"),
+  voicePickerName: document.querySelector("#voicePickerName"),
+  voicePickerMeta: document.querySelector("#voicePickerMeta"),
+  voicePickerPanel: document.querySelector("#voicePickerPanel"),
+  voiceSearch: document.querySelector("#voiceSearch"),
+  voiceOptions: document.querySelector("#voiceOptions"),
+  voiceSearchStatus: document.querySelector("#voiceSearchStatus"),
+  voiceHint: document.querySelector("#voiceHint"),
   fontSelect: document.querySelector("#fontSelect"),
   pasteButton: document.querySelector("#pasteButton"),
   shareButton: document.querySelector("#shareButton"),
@@ -52,8 +60,28 @@ const fontStacks = {
   system: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 };
 
+const languageNames = typeof Intl.DisplayNames === "function"
+  ? new Intl.DisplayNames(["ru"], { type: "language" })
+  : null;
+
+function languageLabel(code = "") {
+  const language = code.split(/[-_]/)[0].toLowerCase();
+  try {
+    return languageNames?.of(language) || code;
+  } catch {
+    return code;
+  }
+}
+
 const state = {
   voices: [],
+  voiceChoices: [],
+  selectedVoiceKey: "",
+  selectedVoice: null,
+  fishAvailable: false,
+  fishAudio: null,
+  fishAbort: null,
+  fishObjectUrl: "",
   rate: 1,
   queue: [],
   queueIndex: 0,
@@ -70,6 +98,7 @@ const state = {
 };
 
 let preparedShare = null;
+let voiceSearchTimer = null;
 
 const storage = {
   get(key, fallback = "") {
@@ -385,6 +414,43 @@ function createQueue(text) {
   return { queue, sections: sectionData, totalWords: wordCursor };
 }
 
+function createFishQueue(text) {
+  const sections = getSections(text);
+  let wordCursor = 0;
+  const queue = [];
+
+  sections.forEach((section, sectionIndex) => {
+    const spokenSection = normalizeForSpeech(section);
+    const sentences = spokenSection.match(/[^.!?…]+(?:[.!?…]+|$)/gu) || [spokenSection];
+    const chunks = [];
+    let chunk = "";
+
+    sentences.flatMap((sentence) => splitLongPart(sentence.trim(), 1_800)).filter(Boolean).forEach((part) => {
+      if (chunk && `${chunk} ${part}`.length > 1_800) {
+        chunks.push(chunk);
+        chunk = part;
+      } else {
+        chunk = chunk ? `${chunk} ${part}` : part;
+      }
+    });
+    if (chunk) chunks.push(chunk);
+
+    chunks.forEach((part) => {
+      const wordCount = part.match(/\S+/g)?.length || 0;
+      queue.push({
+        text: part,
+        sectionIndex,
+        sectionTotal: sections.length,
+        startWord: wordCursor,
+        endWord: wordCursor + wordCount,
+      });
+      wordCursor += wordCount;
+    });
+  });
+
+  return { queue, totalWords: wordCursor };
+}
+
 function formatTime(seconds) {
   const rounded = Math.max(0, Math.round(seconds));
   const minutes = Math.floor(rounded / 60);
@@ -521,6 +587,131 @@ function renderSections(plan) {
   });
 }
 
+function closeVoicePicker() {
+  elements.voicePickerPanel.hidden = true;
+  elements.voicePickerButton.setAttribute("aria-expanded", "false");
+}
+
+function openVoicePicker() {
+  elements.voicePickerPanel.hidden = false;
+  elements.voicePickerButton.setAttribute("aria-expanded", "true");
+  elements.voiceSearch.focus();
+}
+
+function renderVoiceChoices(filter = elements.voiceSearch.value) {
+  const query = filter.trim().toLocaleLowerCase("ru");
+  const choices = state.voiceChoices.filter((voice) => (
+    !query || `${voice.name} ${voice.meta} ${voice.provider}`.toLocaleLowerCase("ru").includes(query)
+  ));
+  elements.voiceOptions.innerHTML = "";
+
+  [
+    ["system", "Голоса устройства"],
+    ["fish", "Fish Audio · Free API"],
+  ].forEach(([provider, label]) => {
+    const group = choices.filter((voice) => voice.provider === provider);
+    if (!group.length) return;
+
+    const heading = document.createElement("p");
+    heading.className = "voice-group-label";
+    heading.textContent = label;
+    elements.voiceOptions.append(heading);
+
+    group.forEach((voice) => {
+      const button = document.createElement("button");
+      const copy = document.createElement("span");
+      const name = document.createElement("strong");
+      const meta = document.createElement("small");
+      const badge = document.createElement("span");
+      button.type = "button";
+      button.className = "voice-option";
+      button.dataset.voiceKey = voice.key;
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(voice.key === state.selectedVoiceKey));
+      name.textContent = voice.name;
+      meta.textContent = voice.meta;
+      badge.className = "voice-badge";
+      badge.textContent = provider === "fish" ? "Fish" : (voice.lang || "Local");
+      copy.append(name, meta);
+      button.append(copy, badge);
+      elements.voiceOptions.append(button);
+    });
+  });
+
+  if (!choices.length) {
+    const empty = document.createElement("p");
+    empty.className = "voice-search-status";
+    empty.textContent = state.fishAvailable ? "Ничего не найдено. Попробуй имя или язык." : "Среди голосов устройства ничего не найдено.";
+    elements.voiceOptions.append(empty);
+  }
+}
+
+function selectVoiceChoice(voice, restart = true) {
+  if (!voice) return;
+  state.selectedVoice = voice;
+  state.selectedVoiceKey = voice.key;
+  storage.set("voice", voice.key);
+  elements.voicePickerName.textContent = voice.name;
+  elements.voicePickerMeta.textContent = voice.meta;
+  renderVoiceChoices();
+  closeVoicePicker();
+  if (restart && state.speaking) startSpeech(state.currentWord);
+}
+
+function chooseInitialVoice() {
+  if (state.selectedVoice) return;
+  const saved = storage.get("voice");
+  const preferred = state.voiceChoices.find((voice) => voice.key === saved)
+    || state.voiceChoices.find((voice) => voice.provider === "system" && voice.lang?.toLowerCase().startsWith("ru") && voice.isDefault)
+    || state.voiceChoices.find((voice) => voice.provider === "system" && voice.lang?.toLowerCase().startsWith("ru"))
+    || state.voiceChoices[0];
+  selectVoiceChoice(preferred, false);
+}
+
+async function loadFishVoices(query = "") {
+  if (!state.fishAvailable || !shareApiUrl) return;
+  elements.voiceSearchStatus.textContent = "Ищу голоса Fish Audio…";
+  try {
+    const response = await fetch(`${shareApiUrl}/fish/voices?q=${encodeURIComponent(query)}`);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "Каталог Fish Audio недоступен");
+    const fishChoices = (result.items || []).map((voice) => ({
+      key: `fish:${voice.id}`,
+      id: voice.id,
+      provider: "fish",
+      name: voice.title,
+      lang: (voice.languages || []).map(languageLabel).join(", "),
+      meta: `${(voice.languages || []).map(languageLabel).join(", ") || "мультиязычный"} · модель сообщества · ${voice.author}`,
+    }));
+    state.voiceChoices = [
+      ...state.voiceChoices.filter((voice) => voice.provider !== "fish"),
+      ...fishChoices,
+    ];
+    elements.voiceSearchStatus.textContent = `${fishChoices.length} голосов Fish · бесплатная модель`;
+    renderVoiceChoices(query);
+    const savedFish = fishChoices.find((voice) => voice.key === storage.get("voice"));
+    if (savedFish && state.selectedVoiceKey !== savedFish.key) selectVoiceChoice(savedFish, false);
+    else chooseInitialVoice();
+  } catch (error) {
+    elements.voiceSearchStatus.textContent = error.message || "Fish Audio временно недоступен";
+  }
+}
+
+async function loadFishStatus() {
+  if (!shareApiUrl) return;
+  try {
+    const response = await fetch(`${shareApiUrl}/fish/status`);
+    const result = await response.json().catch(() => ({}));
+    state.fishAvailable = response.ok && result.enabled && result.available;
+    if (state.fishAvailable) {
+      elements.voiceHint.textContent = "Системные голоса и Fish Audio s2.1-pro-free · $0 по Fair Use";
+      await loadFishVoices();
+    }
+  } catch {
+    state.fishAvailable = false;
+  }
+}
+
 function updateTextMeta() {
   const text = elements.textInput.value;
   const plan = createQueue(text);
@@ -564,6 +755,19 @@ function stopSpeech(message = "Остановлено", preservePosition = true)
   if (!preservePosition) resetSavedPosition();
   state.session += 1;
   if (supportsSpeech) synth.cancel();
+  state.fishAbort?.abort();
+  state.fishAbort = null;
+  if (state.fishAudio) {
+    state.fishAudio.ontimeupdate = null;
+    state.fishAudio.onended = null;
+    state.fishAudio.onerror = null;
+    state.fishAudio.pause();
+    state.fishAudio.removeAttribute("src");
+    state.fishAudio.load();
+    state.fishAudio = null;
+  }
+  if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
+  state.fishObjectUrl = "";
   state.speaking = false;
   state.paused = false;
   state.queue = [];
@@ -593,7 +797,7 @@ function speakCurrent(session) {
   const relativeStart = state.seekWord === null ? 0 : Math.max(0, state.seekWord - item.startWord);
   const spokenText = relativeStart ? itemWords.slice(relativeStart).join(" ") : item.text;
   const utterance = new SpeechSynthesisUtterance(spokenText);
-  const selectedVoice = state.voices.find((voice) => voice.voiceURI === elements.voiceSelect.value);
+  const selectedVoice = state.voices.find((voice) => voice.voiceURI === state.selectedVoice?.id);
 
   if (selectedVoice) {
     utterance.voice = selectedVoice;
@@ -639,7 +843,7 @@ function speakCurrent(session) {
   synth.speak(utterance);
 }
 
-function startSpeech(startWord = 0) {
+function startSystemSpeech(startWord = 0) {
   if (!supportsSpeech) return;
 
   const text = elements.textInput.value.trim();
@@ -664,6 +868,130 @@ function startSpeech(startWord = 0) {
   setProgress(safeWord);
   updatePlayer("playing", "Подготавливаю выбранный фрагмент…");
   speakCurrent(state.session);
+}
+
+async function speakCurrentFish(session) {
+  if (!state.speaking || session !== state.session) return;
+  if (state.queueIndex >= state.queue.length) {
+    state.speaking = false;
+    state.paused = false;
+    resetSavedPosition();
+    elements.progressBar.style.width = "100%";
+    updatePlayer("idle", "Готово — весь текст прочитан Fish Audio");
+    return;
+  }
+
+  const item = state.queue[state.queueIndex];
+  const itemWords = item.text.match(/\S+/g) || [];
+  const relativeStart = state.seekWord === null ? 0 : Math.max(0, state.seekWord - item.startWord);
+  const spokenText = relativeStart ? itemWords.slice(relativeStart).join(" ") : item.text;
+  const segmentStartWord = item.startWord + relativeStart;
+  state.seekWord = null;
+  state.currentWord = segmentStartWord;
+  savePosition(state.currentWord, true);
+  setProgress(state.currentWord);
+  highlightSection(item.sectionIndex, state.readMode, "auto");
+  updatePlayer("playing", `Fish Audio готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
+
+  const controller = new AbortController();
+  state.fishAbort = controller;
+  try {
+    const response = await fetch(`${shareApiUrl}/fish/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: spokenText, referenceId: state.selectedVoice.id }),
+      signal: controller.signal,
+    });
+    if (session !== state.session) return;
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.error || "Fish Audio не сгенерировал аудио");
+    }
+
+    const blob = await response.blob();
+    if (session !== state.session) return;
+    if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
+    state.fishObjectUrl = URL.createObjectURL(blob);
+    const audio = new Audio(state.fishObjectUrl);
+    state.fishAudio = audio;
+    audio.playbackRate = state.rate;
+    audio.preservesPitch = true;
+
+    audio.ontimeupdate = () => {
+      if (session !== state.session || !Number.isFinite(audio.duration) || !audio.duration) return;
+      const fraction = Math.min(1, audio.currentTime / audio.duration);
+      state.currentWord = Math.min(item.endWord, Math.round(segmentStartWord + ((item.endWord - segmentStartWord) * fraction)));
+      savePosition(state.currentWord);
+      setProgress(state.currentWord);
+    };
+    audio.onended = () => {
+      if (session !== state.session || !state.speaking) return;
+      state.currentWord = item.endWord;
+      savePosition(state.currentWord, true);
+      state.queueIndex += 1;
+      setProgress(state.currentWord);
+      speakCurrentFish(session);
+    };
+    audio.onerror = () => {
+      if (session === state.session) stopSpeech("Не удалось воспроизвести аудио Fish");
+    };
+
+    updatePlayer(
+      "playing",
+      `Fish · раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
+    );
+    try {
+      await audio.play();
+    } catch {
+      state.paused = true;
+      updatePlayer("paused", "Аудио Fish готово — нажми «Продолжить»");
+    }
+  } catch (error) {
+    if (error.name !== "AbortError" && session === state.session) {
+      stopSpeech(error.message || "Fish Audio временно недоступен");
+    }
+  } finally {
+    if (state.fishAbort === controller) state.fishAbort = null;
+  }
+}
+
+function startFishSpeech(startWord = 0) {
+  const text = elements.textInput.value.trim();
+  if (!text) {
+    elements.textInput.focus();
+    updatePlayer("idle", "Сначала вставь текст");
+    return;
+  }
+
+  state.session += 1;
+  if (supportsSpeech) synth.cancel();
+  state.fishAbort?.abort();
+  if (state.fishAudio) {
+    state.fishAudio.ontimeupdate = null;
+    state.fishAudio.onended = null;
+    state.fishAudio.onerror = null;
+    state.fishAudio.pause();
+    state.fishAudio = null;
+  }
+  if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
+  state.fishObjectUrl = "";
+  const plan = createFishQueue(text);
+  const safeWord = Math.max(0, Math.min(startWord, Math.max(0, plan.totalWords - 1)));
+  state.queue = plan.queue;
+  state.totalWords = plan.totalWords;
+  state.currentWord = safeWord;
+  state.queueIndex = Math.max(0, state.queue.findIndex((item) => safeWord < item.endWord));
+  state.seekWord = safeWord;
+  state.speaking = true;
+  state.paused = false;
+  savePosition(safeWord, true);
+  setProgress(safeWord);
+  speakCurrentFish(state.session);
+}
+
+function startSpeech(startWord = 0) {
+  if (state.selectedVoice?.provider === "fish") startFishSpeech(startWord);
+  else startSystemSpeech(startWord);
 }
 
 function seekBy(seconds) {
@@ -691,17 +1019,25 @@ async function pasteText() {
   }
 }
 
-function handlePlay() {
-  if (!supportsSpeech) return;
-
+async function handlePlay() {
   if (!state.speaking) {
     startSpeech(state.resumeWord);
   } else if (state.paused) {
-    synth.resume();
+    if (state.selectedVoice?.provider === "fish" && state.fishAudio) {
+      try {
+        await state.fishAudio.play();
+      } catch {
+        updatePlayer("paused", "Браузер не разрешил запуск аудио");
+        return;
+      }
+    } else {
+      synth.resume();
+    }
     state.paused = false;
     updatePlayer("playing", elements.statusText.textContent);
   } else {
-    synth.pause();
+    if (state.selectedVoice?.provider === "fish") state.fishAudio?.pause();
+    else synth.pause();
     state.paused = true;
     updatePlayer("paused", "Воспроизведение на паузе");
   }
@@ -718,23 +1054,22 @@ function loadVoices() {
 
   if (!voices.length) return;
 
-  const previous = storage.get("voice", elements.voiceSelect.value);
   state.voices = voices;
-  elements.voiceSelect.innerHTML = "";
-
-  voices.forEach((voice) => {
-    const option = document.createElement("option");
-    option.value = voice.voiceURI;
-    option.textContent = `${voice.name} · ${voice.lang}${voice.localService ? "" : " · онлайн"}`;
-    elements.voiceSelect.append(option);
-  });
-
-  const preferred = voices.find((voice) => voice.voiceURI === previous)
-    || voices.find((voice) => voice.lang.toLowerCase().startsWith("ru") && voice.default)
-    || voices.find((voice) => voice.lang.toLowerCase().startsWith("ru"))
-    || voices.find((voice) => voice.default)
-    || voices[0];
-  elements.voiceSelect.value = preferred.voiceURI;
+  const systemChoices = voices.map((voice) => ({
+    key: `system:${voice.voiceURI}`,
+    id: voice.voiceURI,
+    provider: "system",
+    name: voice.name,
+    lang: voice.lang,
+    isDefault: voice.default,
+    meta: `${languageLabel(voice.lang)} · ${voice.lang}${voice.localService ? " · на устройстве" : " · системный онлайн"}`,
+  }));
+  state.voiceChoices = [
+    ...systemChoices,
+    ...state.voiceChoices.filter((voice) => voice.provider === "fish"),
+  ];
+  chooseInitialVoice();
+  renderVoiceChoices();
 }
 
 function selectRate(rate) {
@@ -746,7 +1081,10 @@ function selectRate(rate) {
   });
   storage.set("rate", String(rate));
   updateTextMeta();
-  if (state.speaking) startSpeech(state.currentWord);
+  if (state.speaking) {
+    if (state.selectedVoice?.provider === "fish" && state.fishAudio) state.fishAudio.playbackRate = rate;
+    else startSpeech(state.currentWord);
+  }
 }
 
 function selectFont(font) {
@@ -791,15 +1129,18 @@ async function initialize() {
     updatePlayer("idle", shareLoadError);
   }
 
-  if (!supportsSpeech) {
-    elements.voiceSelect.innerHTML = '<option value="">Браузер не поддерживает озвучивание</option>';
+  if (supportsSpeech) {
+    loadVoices();
+    synth.addEventListener?.("voiceschanged", loadVoices);
+  }
+  await loadFishStatus();
+
+  if (!supportsSpeech && !state.fishAvailable) {
+    elements.voicePickerName.textContent = "Голоса недоступны";
     elements.playButton.disabled = true;
     updatePlayer("idle", "Открой Voicy в Chrome, Edge или Safari");
     return;
   }
-
-  loadVoices();
-  synth.addEventListener?.("voiceschanged", loadVoices);
 }
 
 elements.textInput.addEventListener("input", () => {
@@ -816,6 +1157,20 @@ elements.shareInlineButton.addEventListener("click", createInlineShare);
 elements.shareCloudButton.addEventListener("click", createCloudShare);
 elements.shareSendButton.addEventListener("click", sendPreparedShare);
 elements.shareCopyButton.addEventListener("click", copyPreparedShare);
+elements.voicePickerButton.addEventListener("click", () => {
+  if (elements.voicePickerPanel.hidden) openVoicePicker();
+  else closeVoicePicker();
+});
+elements.voiceOptions.addEventListener("click", (event) => {
+  const button = event.target.closest(".voice-option");
+  if (!button) return;
+  selectVoiceChoice(state.voiceChoices.find((voice) => voice.key === button.dataset.voiceKey));
+});
+elements.voiceSearch.addEventListener("input", () => {
+  renderVoiceChoices();
+  window.clearTimeout(voiceSearchTimer);
+  voiceSearchTimer = window.setTimeout(() => loadFishVoices(elements.voiceSearch.value), 350);
+});
 elements.viewModeButton.addEventListener("click", () => {
   setReadMode(!state.readMode, state.readMode);
 });
@@ -852,10 +1207,10 @@ elements.sectionsList.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !elements.sectionsPanel.hidden) closeSections();
   if (event.key === "Escape" && !elements.shareDialog.hidden) closeShareDialog();
+  if (event.key === "Escape" && !elements.voicePickerPanel.hidden) closeVoicePicker();
 });
-elements.voiceSelect.addEventListener("change", () => {
-  storage.set("voice", elements.voiceSelect.value);
-  if (state.speaking) startSpeech(state.currentWord);
+document.addEventListener("click", (event) => {
+  if (!elements.voicePickerPanel.hidden && !event.target.closest(".voice-field")) closeVoicePicker();
 });
 elements.fontSelect.addEventListener("change", () => selectFont(elements.fontSelect.value));
 elements.speedButtons.forEach((button) => {
@@ -864,6 +1219,8 @@ elements.speedButtons.forEach((button) => {
 
 window.addEventListener("beforeunload", () => {
   if (supportsSpeech) synth.cancel();
+  state.fishAudio?.pause();
+  if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
 });
 
 initialize().catch(() => updatePlayer("idle", "Не удалось запустить Voicy"));
