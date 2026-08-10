@@ -80,7 +80,8 @@ const state = {
   selectedVoice: null,
   fishAvailable: false,
   fishAudio: null,
-  fishAbort: null,
+  fishAudioCache: new Map(),
+  fishControllers: new Set(),
   fishObjectUrl: "",
   rate: 1,
   queue: [],
@@ -755,8 +756,9 @@ function stopSpeech(message = "Остановлено", preservePosition = true)
   if (!preservePosition) resetSavedPosition();
   state.session += 1;
   if (supportsSpeech) synth.cancel();
-  state.fishAbort?.abort();
-  state.fishAbort = null;
+  state.fishControllers.forEach((controller) => controller.abort());
+  state.fishControllers.clear();
+  state.fishAudioCache.clear();
   if (state.fishAudio) {
     state.fishAudio.ontimeupdate = null;
     state.fishAudio.onended = null;
@@ -893,22 +895,8 @@ async function speakCurrentFish(session) {
   highlightSection(item.sectionIndex, state.readMode, "auto");
   updatePlayer("playing", `Fish Audio готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
 
-  const controller = new AbortController();
-  state.fishAbort = controller;
   try {
-    const response = await fetch(`${shareApiUrl}/fish/tts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: spokenText, referenceId: state.selectedVoice.id }),
-      signal: controller.signal,
-    });
-    if (session !== state.session) return;
-    if (!response.ok) {
-      const result = await response.json().catch(() => ({}));
-      throw new Error(result.error || "Fish Audio не сгенерировал аудио");
-    }
-
-    const blob = await response.blob();
+    const blob = await getFishAudioBlob(spokenText, state.selectedVoice.id);
     if (session !== state.session) return;
     if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
     state.fishObjectUrl = URL.createObjectURL(blob);
@@ -916,6 +904,7 @@ async function speakCurrentFish(session) {
     state.fishAudio = audio;
     audio.playbackRate = state.rate;
     audio.preservesPitch = true;
+    prefetchNextFishChunk(state.queueIndex, session);
 
     audio.ontimeupdate = () => {
       if (session !== state.session || !Number.isFinite(audio.duration) || !audio.duration) return;
@@ -950,9 +939,55 @@ async function speakCurrentFish(session) {
     if (error.name !== "AbortError" && session === state.session) {
       stopSpeech(error.message || "Fish Audio временно недоступен");
     }
-  } finally {
-    if (state.fishAbort === controller) state.fishAbort = null;
   }
+}
+
+function fishAudioCacheKey(text, referenceId) {
+  return `${referenceId}:${text}`;
+}
+
+function trimFishAudioCache() {
+  while (state.fishAudioCache.size > 3) {
+    const oldestKey = state.fishAudioCache.keys().next().value;
+    state.fishAudioCache.delete(oldestKey);
+  }
+}
+
+function getFishAudioBlob(text, referenceId) {
+  const key = fishAudioCacheKey(text, referenceId);
+  if (state.fishAudioCache.has(key)) return state.fishAudioCache.get(key);
+
+  const controller = new AbortController();
+  state.fishControllers.add(controller);
+  const request = fetch(`${shareApiUrl}/fish/tts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, referenceId }),
+    signal: controller.signal,
+  }).then(async (response) => {
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.error || "Fish Audio не сгенерировал аудио");
+    }
+    return response.blob();
+  }).catch((error) => {
+    state.fishAudioCache.delete(key);
+    throw error;
+  }).finally(() => {
+    state.fishControllers.delete(controller);
+  });
+
+  state.fishAudioCache.set(key, request);
+  trimFishAudioCache();
+  return request;
+}
+
+function prefetchNextFishChunk(currentIndex, session) {
+  const nextItem = state.queue[currentIndex + 1];
+  if (!nextItem || session !== state.session || state.selectedVoice?.provider !== "fish") return;
+  getFishAudioBlob(nextItem.text, state.selectedVoice.id).catch(() => {
+    // The regular playback path will retry and show a useful error if needed.
+  });
 }
 
 function startFishSpeech(startWord = 0) {
@@ -965,7 +1000,9 @@ function startFishSpeech(startWord = 0) {
 
   state.session += 1;
   if (supportsSpeech) synth.cancel();
-  state.fishAbort?.abort();
+  state.fishControllers.forEach((controller) => controller.abort());
+  state.fishControllers.clear();
+  state.fishAudioCache.clear();
   if (state.fishAudio) {
     state.fishAudio.ontimeupdate = null;
     state.fishAudio.onended = null;
