@@ -554,11 +554,11 @@ textarea::placeholder {
   color: #28784b;
 }
 
-.floating-sections {
+.floating-sections,
+.floating-settings {
   position: fixed;
   z-index: 10;
   right: 18px;
-  bottom: 96px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -572,8 +572,21 @@ textarea::placeholder {
   font-weight: 600;
 }
 
-.floating-sections:hover {
+.floating-sections {
+  bottom: 96px;
+}
+
+.floating-settings {
+  bottom: 148px;
+  border-color: var(--accent);
+  color: var(--ink);
+  background: var(--accent);
+}
+
+.floating-sections:hover,
+.floating-settings:hover {
   background: #35322e;
+  color: white;
 }
 
 .floating-sections strong {
@@ -1180,6 +1193,11 @@ footer {
   .floating-sections {
     right: 14px;
     bottom: 196px;
+  }
+
+  .floating-settings {
+    right: 14px;
+    bottom: 250px;
   }
 
   .setting-grid {

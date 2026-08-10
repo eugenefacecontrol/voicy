@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=4" />
+    <link rel="stylesheet" href="styles.css?v=6" />
   </head>
   <body>
     <main class="shell">
@@ -130,7 +130,12 @@
         <strong id="floatingSectionCount">0</strong>
       </button>
 
-      <section class="settings" aria-labelledby="settings-title">
+      <button class="floating-settings" id="floatingSettingsButton" type="button" aria-controls="settings" hidden>
+        <span aria-hidden="true">↓</span>
+        <span>Настройки</span>
+      </button>
+
+      <section class="settings" id="settings" aria-labelledby="settings-title">
         <div class="settings-heading">
           <p class="step">02 / Настройка</p>
           <h2 id="settings-title">Как это прозвучит?</h2>
@@ -226,6 +231,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=6"></script>
   </body>
 </html>

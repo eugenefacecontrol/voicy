@@ -46,6 +46,8 @@ const elements = {
   sectionsList: document.querySelector("#sectionsList"),
   floatingSectionsButton: document.querySelector("#floatingSectionsButton"),
   floatingSectionCount: document.querySelector("#floatingSectionCount"),
+  floatingSettingsButton: document.querySelector("#floatingSettingsButton"),
+  settings: document.querySelector("#settings"),
   characterCount: document.querySelector("#characterCount"),
   durationEstimate: document.querySelector("#durationEstimate"),
   progressBar: document.querySelector("#progressBar"),
@@ -588,6 +590,11 @@ function renderSections(plan) {
   });
 }
 
+function updateFloatingSettingsButton() {
+  const settingsTop = elements.settings.getBoundingClientRect().top;
+  elements.floatingSettingsButton.hidden = settingsTop <= window.innerHeight - 24;
+}
+
 function closeVoicePicker() {
   elements.voicePickerPanel.hidden = true;
   elements.voicePickerButton.setAttribute("aria-expanded", "false");
@@ -728,6 +735,7 @@ function updateTextMeta() {
   if (state.activeSection >= 0) highlightSection(state.activeSection);
   renderSections(plan);
   storage.set("text", text);
+  window.requestAnimationFrame(updateFloatingSettingsButton);
 }
 
 function updatePlayer(mode, message) {
@@ -1231,6 +1239,9 @@ elements.floatingSectionsButton.addEventListener("click", () => {
   if (elements.sectionsPanel.hidden) openSections();
   else closeSections();
 });
+elements.floatingSettingsButton.addEventListener("click", () => {
+  elements.settings.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 elements.sectionsClose.addEventListener("click", closeSections);
 elements.sectionsBackdrop.addEventListener("click", closeSections);
 elements.sectionsList.addEventListener("click", (event) => {
@@ -1259,5 +1270,9 @@ window.addEventListener("beforeunload", () => {
   state.fishAudio?.pause();
   if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
 });
+window.addEventListener("scroll", updateFloatingSettingsButton, { passive: true });
+window.addEventListener("resize", updateFloatingSettingsButton);
 
-initialize().catch(() => updatePlayer("idle", "Не удалось запустить Voicy"));
+initialize()
+  .then(updateFloatingSettingsButton)
+  .catch(() => updatePlayer("idle", "Не удалось запустить Voicy"));
