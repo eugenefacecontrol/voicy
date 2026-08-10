@@ -659,11 +659,30 @@ function selectVoiceChoice(voice, restart = true) {
   state.selectedVoice = voice;
   state.selectedVoiceKey = voice.key;
   storage.set("voice", voice.key);
+  storage.set("voiceChoice", JSON.stringify({
+    key: voice.key,
+    id: voice.id,
+    provider: voice.provider,
+    name: voice.name,
+    lang: voice.lang || "",
+    meta: voice.meta || "",
+  }));
   elements.voicePickerName.textContent = voice.name;
   elements.voicePickerMeta.textContent = voice.meta;
   renderVoiceChoices();
   closeVoicePicker();
   if (restart && state.speaking) startSpeech(state.currentWord);
+}
+
+function restoreStoredFishVoice() {
+  try {
+    const voice = JSON.parse(storage.get("voiceChoice", "null"));
+    if (!voice || voice.provider !== "fish" || !voice.key?.startsWith("fish:") || !voice.id || !voice.name) return;
+    state.voiceChoices.push(voice);
+    selectVoiceChoice(voice, false);
+  } catch {
+    storage.remove("voiceChoice");
+  }
 }
 
 function chooseInitialVoice() {
@@ -691,8 +710,13 @@ async function loadFishVoices(query = "") {
       lang: (voice.languages || []).map(languageLabel).join(", "),
       meta: `${(voice.languages || []).map(languageLabel).join(", ") || "мультиязычный"} · модель сообщества · ${voice.author}`,
     }));
+    const preservedFish = state.selectedVoice?.provider === "fish"
+      && !fishChoices.some((voice) => voice.key === state.selectedVoiceKey)
+      ? [state.selectedVoice]
+      : [];
     state.voiceChoices = [
       ...state.voiceChoices.filter((voice) => voice.provider !== "fish"),
+      ...preservedFish,
       ...fishChoices,
     ];
     elements.voiceSearchStatus.textContent = `${fishChoices.length} голосов Fish · бесплатная модель`;
@@ -1148,6 +1172,7 @@ async function initialize() {
     shareLoadError = error.message || "Не удалось открыть общую ссылку";
   }
 
+  restoreStoredFishVoice();
   elements.textInput.value = sharedText ?? storage.get("text");
   if (sharedText !== null) {
     resetSavedPosition();
