@@ -625,8 +625,21 @@ textarea::placeholder {
 }
 
 .section-jump:hover,
-.section-jump:focus-visible {
+.section-jump:focus-visible,
+.section-jump.active {
   background: rgba(255, 92, 53, 0.1);
+}
+
+.section-jump.active {
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.section-jump.active .section-copy {
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
 }
 
 .section-time {

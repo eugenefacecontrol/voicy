@@ -2,6 +2,8 @@ const synth = window.speechSynthesis;
 const supportsSpeech = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 const shareApiUrl = document.querySelector('meta[name="voicy-share-api"]')?.content.replace(/\/$/, "") || "";
 const maxInlineShareUrlLength = 8000;
+const fishPrefetchAhead = 4;
+const fishAudioCacheLimit = 7;
 
 const elements = {
   textInput: document.querySelector("#textInput"),
@@ -534,12 +536,30 @@ function highlightSection(sectionIndex, shouldScroll = false, scrollBehavior = "
   elements.textPreview.querySelector(".preview-section.active")?.classList.remove("active");
   const section = elements.textPreview.querySelector(`[data-section-index="${sectionIndex}"]`);
   state.activeSection = section ? sectionIndex : -1;
+  markActiveSectionInList();
   if (!section) return;
   section.classList.add("active");
   if (shouldScroll) {
     window.requestAnimationFrame(() => {
       const targetTop = window.scrollY + section.getBoundingClientRect().top - (window.innerHeight * 0.32);
       window.scrollTo({ top: Math.max(0, targetTop), behavior: scrollBehavior });
+    });
+  }
+}
+
+function markActiveSectionInList(shouldScroll = false) {
+  elements.sectionsList.querySelector(".section-jump.active")?.classList.remove("active");
+  elements.sectionsList.querySelector('[aria-current="true"]')?.removeAttribute("aria-current");
+  const activeButton = elements.sectionsList.querySelector(`[data-section-index="${state.activeSection}"]`);
+  if (!activeButton) return;
+  activeButton.classList.add("active");
+  activeButton.setAttribute("aria-current", "true");
+  if (shouldScroll) {
+    window.requestAnimationFrame(() => {
+      elements.sectionsList.scrollTop = Math.max(
+        0,
+        activeButton.offsetTop - ((elements.sectionsList.clientHeight - activeButton.offsetHeight) / 2),
+      );
     });
   }
 }
@@ -561,6 +581,7 @@ function openSections() {
   elements.sectionsBackdrop.hidden = false;
   elements.sectionCount.setAttribute("aria-expanded", "true");
   elements.floatingSectionsButton.setAttribute("aria-expanded", "true");
+  markActiveSectionInList(true);
   elements.sectionsClose.focus();
 }
 
@@ -588,6 +609,7 @@ function renderSections(plan) {
     button.setAttribute("aria-label", `Раздел ${section.index + 1}, ${formatTime(seconds)}: ${section.preview}`);
     elements.sectionsList.append(button);
   });
+  markActiveSectionInList();
 }
 
 function updateFloatingSettingsButton() {
@@ -932,11 +954,16 @@ async function speakCurrentFish(session) {
     if (session !== state.session) return;
     if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
     state.fishObjectUrl = URL.createObjectURL(blob);
-    const audio = new Audio(state.fishObjectUrl);
+    const audio = state.fishAudio || new Audio();
+    audio.ontimeupdate = null;
+    audio.onended = null;
+    audio.onerror = null;
+    audio.src = state.fishObjectUrl;
+    audio.load();
     state.fishAudio = audio;
     audio.playbackRate = state.rate;
     audio.preservesPitch = true;
-    prefetchNextFishChunk(state.queueIndex, session);
+    prefetchFishChunks(state.queueIndex, session);
 
     audio.ontimeupdate = () => {
       if (session !== state.session || !Number.isFinite(audio.duration) || !audio.duration) return;
@@ -979,7 +1006,7 @@ function fishAudioCacheKey(text, referenceId) {
 }
 
 function trimFishAudioCache() {
-  while (state.fishAudioCache.size > 3) {
+  while (state.fishAudioCache.size > fishAudioCacheLimit) {
     const oldestKey = state.fishAudioCache.keys().next().value;
     state.fishAudioCache.delete(oldestKey);
   }
@@ -1014,12 +1041,15 @@ function getFishAudioBlob(text, referenceId) {
   return request;
 }
 
-function prefetchNextFishChunk(currentIndex, session) {
-  const nextItem = state.queue[currentIndex + 1];
-  if (!nextItem || session !== state.session || state.selectedVoice?.provider !== "fish") return;
-  getFishAudioBlob(nextItem.text, state.selectedVoice.id).catch(() => {
-    // The regular playback path will retry and show a useful error if needed.
-  });
+function prefetchFishChunks(currentIndex, session) {
+  if (session !== state.session || state.selectedVoice?.provider !== "fish") return;
+  for (let offset = 1; offset <= fishPrefetchAhead; offset += 1) {
+    const nextItem = state.queue[currentIndex + offset];
+    if (!nextItem) break;
+    getFishAudioBlob(nextItem.text, state.selectedVoice.id).catch(() => {
+      // The regular playback path will retry and show a useful error if needed.
+    });
+  }
 }
 
 function startFishSpeech(startWord = 0) {
@@ -1040,7 +1070,8 @@ function startFishSpeech(startWord = 0) {
     state.fishAudio.onended = null;
     state.fishAudio.onerror = null;
     state.fishAudio.pause();
-    state.fishAudio = null;
+  } else {
+    state.fishAudio = new Audio();
   }
   if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
   state.fishObjectUrl = "";
