@@ -40,6 +40,8 @@ const elements = {
   stopButton: document.querySelector("#stopButton"),
   rewindButton: document.querySelector("#rewindButton"),
   forwardButton: document.querySelector("#forwardButton"),
+  previousSectionButton: document.querySelector("#previousSectionButton"),
+  nextSectionButton: document.querySelector("#nextSectionButton"),
   statusText: document.querySelector("#statusText"),
   sectionCount: document.querySelector("#sectionCount"),
   sectionsPanel: document.querySelector("#sectionsPanel"),
@@ -537,6 +539,7 @@ function highlightSection(sectionIndex, shouldScroll = false, scrollBehavior = "
   const section = elements.textPreview.querySelector(`[data-section-index="${sectionIndex}"]`);
   state.activeSection = section ? sectionIndex : -1;
   markActiveSectionInList();
+  updateSectionSkipButtons();
   if (!section) return;
   section.classList.add("active");
   if (shouldScroll) {
@@ -610,6 +613,36 @@ function renderSections(plan) {
     elements.sectionsList.append(button);
   });
   markActiveSectionInList();
+  updateSectionSkipButtons(plan);
+}
+
+function getCurrentSectionIndex(plan) {
+  if (!plan.sections.length) return -1;
+  if (state.activeSection >= 0 && state.activeSection < plan.sections.length) return state.activeSection;
+
+  const currentWord = state.speaking ? state.currentWord : state.resumeWord;
+  let currentSection = 0;
+  plan.sections.forEach((section) => {
+    if (section.startWord <= currentWord) currentSection = section.index;
+  });
+  return currentSection;
+}
+
+function updateSectionSkipButtons(plan = createQueue(elements.textInput.value)) {
+  const currentSection = getCurrentSectionIndex(plan);
+  elements.previousSectionButton.disabled = currentSection <= 0;
+  elements.nextSectionButton.disabled = currentSection < 0 || currentSection >= plan.sections.length - 1;
+}
+
+function jumpToAdjacentSection(direction) {
+  const plan = createQueue(elements.textInput.value);
+  const currentSection = getCurrentSectionIndex(plan);
+  const targetSection = plan.sections[currentSection + direction];
+  if (!targetSection) return;
+
+  setReadMode(true);
+  highlightSection(targetSection.index, true, "auto");
+  startSpeech(targetSection.startWord);
 }
 
 function updateFloatingSettingsButton() {
@@ -1287,6 +1320,8 @@ elements.playButton.addEventListener("click", handlePlay);
 elements.stopButton.addEventListener("click", () => stopSpeech());
 elements.rewindButton.addEventListener("click", () => seekBy(-10));
 elements.forwardButton.addEventListener("click", () => seekBy(10));
+elements.previousSectionButton.addEventListener("click", () => jumpToAdjacentSection(-1));
+elements.nextSectionButton.addEventListener("click", () => jumpToAdjacentSection(1));
 elements.sectionCount.addEventListener("click", () => {
   if (elements.sectionsPanel.hidden) openSections();
   else closeSections();

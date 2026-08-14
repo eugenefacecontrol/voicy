@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=8" />
+    <link rel="stylesheet" href="styles.css?v=9" />
   </head>
   <body>
     <main class="shell">
@@ -213,6 +213,14 @@
               10 <span aria-hidden="true">↷</span>
             </button>
           </div>
+          <div class="section-skip-controls" aria-label="Переход по разделам">
+            <button class="seek-button section-skip-button" id="previousSectionButton" type="button" aria-label="Предыдущий раздел" title="Предыдущий раздел" disabled>
+              <span aria-hidden="true">|‹</span>
+            </button>
+            <button class="seek-button section-skip-button" id="nextSectionButton" type="button" aria-label="Следующий раздел" title="Следующий раздел" disabled>
+              <span aria-hidden="true">›|</span>
+            </button>
+          </div>
           <button class="play-control" id="playButton" type="button">
             <span id="playIcon" aria-hidden="true">▶</span>
             <span id="playLabel">Слушать</span>
@@ -231,6 +239,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=9"></script>
   </body>
 </html>

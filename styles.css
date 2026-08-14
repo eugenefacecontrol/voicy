@@ -993,7 +993,8 @@ select {
   opacity: 0.35;
 }
 
-.seek-controls {
+.seek-controls,
+.section-skip-controls {
   display: flex;
   overflow: hidden;
   border: 1px solid #46433f;
@@ -1012,6 +1013,13 @@ select {
 
 .seek-button:last-child {
   border-right: 0;
+}
+
+.section-skip-button {
+  min-width: 38px;
+  padding-right: 9px;
+  padding-left: 9px;
+  font-size: 0.86rem;
 }
 
 .seek-button:hover:not(:disabled) {
@@ -1126,11 +1134,19 @@ footer {
     flex: 0 0 104px;
   }
 
+  .section-skip-controls {
+    flex: 0 0 76px;
+  }
+
   .seek-button {
     flex: 1;
     min-width: 52px;
     padding-right: 6px;
     padding-left: 6px;
+  }
+
+  .section-skip-button {
+    min-width: 38px;
   }
 }
 
