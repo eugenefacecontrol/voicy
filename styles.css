@@ -261,6 +261,40 @@ textarea::placeholder {
   transition: border-color 180ms ease, background 180ms ease;
 }
 
+.preview-play-button {
+  display: inline-flex;
+  align-items: center;
+  margin: 6px 0 0 10px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--ink);
+  background: var(--panel);
+  font-family: "DM Mono", monospace;
+  font-size: 0.58rem;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: color 160ms ease, background 160ms ease, opacity 160ms ease, transform 160ms ease;
+  white-space: nowrap;
+}
+
+.preview-section:hover .preview-play-button,
+.preview-section:focus-within .preview-play-button,
+.preview-section.action-visible .preview-play-button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.preview-play-button:hover,
+.preview-play-button:focus-visible {
+  color: white;
+  background: var(--ink);
+}
+
 .preview-section:last-child {
   margin-bottom: 0;
 }
@@ -1244,6 +1278,10 @@ footer {
 
   .preview-section {
     padding-left: 16px;
+  }
+
+  .preview-play-button {
+    margin-left: 6px;
   }
 
   footer {

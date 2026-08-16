@@ -4,6 +4,8 @@ const shareApiUrl = document.querySelector('meta[name="voicy-share-api"]')?.cont
 const maxInlineShareUrlLength = 8000;
 const fishPrefetchAhead = 4;
 const fishAudioCacheLimit = 7;
+const fishPersistentCacheName = "voicy-fish-audio-v1";
+const fishPersistentCacheLimit = 40;
 
 const elements = {
   textInput: document.querySelector("#textInput"),
@@ -512,7 +514,7 @@ function closeSections() {
   elements.floatingSectionsButton.setAttribute("aria-expanded", "false");
 }
 
-function renderTextPreview(text) {
+function renderTextPreview(text, plan = createQueue(text)) {
   const sections = getDisplaySections(text);
   elements.textPreview.innerHTML = "";
 
@@ -526,10 +528,19 @@ function renderTextPreview(text) {
 
   sections.forEach((section, index) => {
     const paragraph = document.createElement("p");
+    const playButton = document.createElement("button");
+    const sectionData = plan.sections[index];
     paragraph.className = "preview-section";
     paragraph.dataset.sectionIndex = String(index);
     paragraph.dataset.sectionNumber = String(index + 1).padStart(2, "0");
-    paragraph.textContent = section;
+    paragraph.tabIndex = 0;
+    playButton.type = "button";
+    playButton.className = "preview-play-button";
+    playButton.dataset.sectionIndex = String(index);
+    playButton.dataset.startWord = String(sectionData?.startWord || 0);
+    playButton.setAttribute("aria-label", `Озвучить раздел ${index + 1} с начала`);
+    playButton.textContent = "▶ Озвучить раздел";
+    paragraph.append(document.createTextNode(section), playButton);
     elements.textPreview.append(paragraph);
   });
 }
@@ -810,7 +821,7 @@ function updateTextMeta() {
   elements.characterCount.textContent = `${text.length} ${pluralize(text.length, ["символ", "символа", "символов"])}`;
   elements.durationEstimate.textContent = `≈ ${minutes} мин`;
   if (!state.speaking) state.totalWords = plan.totalWords;
-  renderTextPreview(text);
+  renderTextPreview(text, plan);
   if (state.activeSection >= 0) highlightSection(state.activeSection);
   renderSections(plan);
   storage.set("text", text);
@@ -1038,6 +1049,42 @@ function fishAudioCacheKey(text, referenceId) {
   return `${referenceId}:${text}`;
 }
 
+function fishPersistentCacheRequest(text, referenceId) {
+  if (!("caches" in window) || !window.isSecureContext) return null;
+  const voice = encodeURIComponent(referenceId);
+  const textKey = encodeURIComponent(fingerprint(text));
+  return new Request(`${window.location.origin}/__voicy_fish_audio__/${voice}/${textKey}`);
+}
+
+async function readPersistentFishAudio(text, referenceId) {
+  const request = fishPersistentCacheRequest(text, referenceId);
+  if (!request) return null;
+  try {
+    const cache = await caches.open(fishPersistentCacheName);
+    const response = await cache.match(request);
+    if (!response) return null;
+    const blob = await response.blob();
+    return blob.size ? blob : null;
+  } catch {
+    return null;
+  }
+}
+
+async function persistFishAudio(text, referenceId, blob) {
+  const request = fishPersistentCacheRequest(text, referenceId);
+  if (!request || !blob.size) return;
+  try {
+    const cache = await caches.open(fishPersistentCacheName);
+    await cache.put(request, new Response(blob, {
+      headers: { "Content-Type": blob.type || "audio/mpeg" },
+    }));
+    const keys = await cache.keys();
+    await Promise.all(keys.slice(0, Math.max(0, keys.length - fishPersistentCacheLimit)).map((key) => cache.delete(key)));
+  } catch {
+    // Fish playback still works when persistent browser storage is unavailable.
+  }
+}
+
 function trimFishAudioCache() {
   while (state.fishAudioCache.size > fishAudioCacheLimit) {
     const oldestKey = state.fishAudioCache.keys().next().value;
@@ -1049,24 +1096,31 @@ function getFishAudioBlob(text, referenceId) {
   const key = fishAudioCacheKey(text, referenceId);
   if (state.fishAudioCache.has(key)) return state.fishAudioCache.get(key);
 
-  const controller = new AbortController();
-  state.fishControllers.add(controller);
-  const request = fetch(`${shareApiUrl}/fish/tts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, referenceId }),
-    signal: controller.signal,
-  }).then(async (response) => {
+  let controller = null;
+  const request = (async () => {
+    const cachedBlob = await readPersistentFishAudio(text, referenceId);
+    if (cachedBlob) return cachedBlob;
+
+    controller = new AbortController();
+    state.fishControllers.add(controller);
+    const response = await fetch(`${shareApiUrl}/fish/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, referenceId }),
+      signal: controller.signal,
+    });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
       throw new Error(result.error || "Fish Audio не сгенерировал аудио");
     }
-    return response.blob();
-  }).catch((error) => {
+    const blob = await response.blob();
+    persistFishAudio(text, referenceId, blob);
+    return blob;
+  })().catch((error) => {
     state.fishAudioCache.delete(key);
     throw error;
   }).finally(() => {
-    state.fishControllers.delete(controller);
+    if (controller) state.fishControllers.delete(controller);
   });
 
   state.fishAudioCache.set(key, request);
@@ -1097,7 +1151,6 @@ function startFishSpeech(startWord = 0) {
   if (supportsSpeech) synth.cancel();
   state.fishControllers.forEach((controller) => controller.abort());
   state.fishControllers.clear();
-  state.fishAudioCache.clear();
   if (state.fishAudio) {
     state.fishAudio.ontimeupdate = null;
     state.fishAudio.onended = null;
@@ -1307,6 +1360,27 @@ elements.voiceSearch.addEventListener("input", () => {
 });
 elements.viewModeButton.addEventListener("click", () => {
   setReadMode(!state.readMode, state.readMode);
+});
+
+elements.textPreview.addEventListener("click", (event) => {
+  const section = event.target.closest(".preview-section");
+  if (!section) return;
+
+  elements.textPreview.querySelector(".preview-section.action-visible")?.classList.remove("action-visible");
+  section.classList.add("action-visible");
+  if (!event.target.closest(".preview-play-button")) return;
+
+  highlightSection(Number(section.dataset.sectionIndex), true, "auto");
+  startSpeech(Number(event.target.closest(".preview-play-button").dataset.startWord));
+});
+
+elements.textPreview.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const section = event.target.closest(".preview-section");
+  if (!section || event.target.closest(".preview-play-button")) return;
+  event.preventDefault();
+  section.classList.add("action-visible");
+  section.querySelector(".preview-play-button")?.focus();
 });
 
 elements.clearButton.addEventListener("click", () => {
