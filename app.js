@@ -392,6 +392,30 @@ function splitLongPart(part, maxLength) {
   return chunks;
 }
 
+function splitMixedLanguageParts(text) {
+  const latinPhrasePattern = /[A-Za-z][A-Za-z0-9'’\-]*(?:\s+[A-Za-z][A-Za-z0-9'’\-]*)*/g;
+  const parts = [];
+  let cursor = 0;
+
+  for (const match of text.matchAll(latinPhrasePattern)) {
+    const latinWords = match[0].match(/[A-Za-z]+/g) || [];
+    const needsEnglishContext = latinWords.some((word) => word.length >= 8);
+    if (!needsEnglishContext) continue;
+
+    if (match.index > cursor) {
+      const precedingText = text.slice(cursor, match.index).trim();
+      if (precedingText) parts.push({ text: precedingText, language: null });
+    }
+    parts.push({ text: match[0].trim(), language: "en" });
+    cursor = match.index + match[0].length;
+  }
+
+  if (!parts.length) return [{ text: text.trim(), language: null }];
+  const remainingText = text.slice(cursor).trim();
+  if (remainingText) parts.push({ text: remainingText, language: null });
+  return parts;
+}
+
 function createQueue(text) {
   const sections = getSections(text);
   let wordCursor = 0;
@@ -400,11 +424,16 @@ function createQueue(text) {
     const sectionStartWord = wordCursor;
     const spokenSection = normalizeForSpeech(section);
     const sentences = spokenSection.match(/[^.!?…]+(?:[.!?…]+[”»"']*|$)/gu) || [spokenSection];
-    const parts = sentences.flatMap((sentence) => splitLongPart(sentence.trim(), 220)).filter(Boolean);
+    const parts = sentences.flatMap((sentence) => (
+      splitMixedLanguageParts(sentence.trim()).flatMap((part) => (
+        splitLongPart(part.text, 220).map((chunk) => ({ text: chunk, language: part.language }))
+      ))
+    )).filter((part) => part.text);
     const items = parts.map((part) => {
-      const wordCount = part.match(/\S+/g)?.length || 0;
+      const wordCount = part.text.match(/\S+/g)?.length || 0;
       const item = {
-        text: part,
+        text: part.text,
+        language: part.language,
         sectionIndex,
         sectionTotal: sections.length,
         startWord: wordCursor,
@@ -433,21 +462,31 @@ function createFishQueue(text) {
     const sentences = spokenSection.match(/[^.!?…]+(?:[.!?…]+|$)/gu) || [spokenSection];
     const chunks = [];
     let chunk = "";
+    let chunkLanguage = null;
 
-    sentences.flatMap((sentence) => splitLongPart(sentence.trim(), 1_800)).filter(Boolean).forEach((part) => {
-      if (chunk && `${chunk} ${part}`.length > 1_800) {
-        chunks.push(chunk);
-        chunk = part;
+    const parts = sentences.flatMap((sentence) => (
+      splitMixedLanguageParts(sentence.trim()).flatMap((part) => (
+        splitLongPart(part.text, 1_800).map((textPart) => ({ text: textPart, language: part.language }))
+      ))
+    )).filter((part) => part.text);
+
+    parts.forEach((part) => {
+      if (chunk && (chunkLanguage !== part.language || `${chunk} ${part.text}`.length > 1_800)) {
+        chunks.push({ text: chunk, language: chunkLanguage });
+        chunk = part.text;
+        chunkLanguage = part.language;
       } else {
-        chunk = chunk ? `${chunk} ${part}` : part;
+        chunk = chunk ? `${chunk} ${part.text}` : part.text;
+        chunkLanguage = part.language;
       }
     });
-    if (chunk) chunks.push(chunk);
+    if (chunk) chunks.push({ text: chunk, language: chunkLanguage });
 
     chunks.forEach((part) => {
-      const wordCount = part.match(/\S+/g)?.length || 0;
+      const wordCount = part.text.match(/\S+/g)?.length || 0;
       queue.push({
-        text: part,
+        text: part.text,
+        language: part.language,
         sectionIndex,
         sectionTotal: sections.length,
         startWord: wordCursor,
@@ -898,10 +937,16 @@ function speakCurrent(session) {
   const spokenText = relativeStart ? itemWords.slice(relativeStart).join(" ") : item.text;
   const utterance = new SpeechSynthesisUtterance(spokenText);
   const selectedVoice = state.voices.find((voice) => voice.voiceURI === state.selectedVoice?.id);
+  const englishVoice = item.language === "en"
+    ? state.voices.find((voice) => voice.lang?.toLowerCase().startsWith("en"))
+    : null;
+  const spokenVoice = englishVoice || selectedVoice;
 
-  if (selectedVoice) {
-    utterance.voice = selectedVoice;
-    utterance.lang = selectedVoice.lang;
+  if (spokenVoice) {
+    utterance.voice = spokenVoice;
+    utterance.lang = spokenVoice.lang;
+  } else if (item.language === "en") {
+    utterance.lang = "en-US";
   }
   utterance.rate = state.rate;
 
