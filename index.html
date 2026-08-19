@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=11" />
+    <link rel="stylesheet" href="styles.css?v=12" />
   </head>
   <body>
     <main class="shell">
@@ -32,6 +32,10 @@
             <h2 id="editor-title">Что будем слушать?</h2>
           </div>
           <div class="text-actions">
+            <button class="mode-button export-trigger" id="exportButton" type="button">
+              <span aria-hidden="true">↓</span>
+              <span>Аудиофайл</span>
+            </button>
             <button class="mode-button share-trigger" id="shareButton" type="button">
               <span aria-hidden="true">↗</span>
               <span>Поделиться</span>
@@ -80,6 +84,39 @@
           <span id="characterCount">0 символов</span>
           <span id="durationEstimate">≈ 0 мин</span>
         </div>
+      </section>
+
+      <div class="share-backdrop" id="exportBackdrop" hidden></div>
+      <section class="share-dialog" id="exportDialog" role="dialog" aria-modal="true" aria-labelledby="exportTitle" hidden>
+        <div class="share-dialog-head">
+          <div>
+            <p class="step">Экспорт</p>
+            <h2 id="exportTitle">Что сохранить?</h2>
+          </div>
+          <button class="sections-close" id="exportClose" type="button" aria-label="Закрыть экспорт аудио">×</button>
+        </div>
+
+        <div class="share-options">
+          <button class="share-option primary" id="exportSectionButton" type="button">
+            <span class="share-option-icon" aria-hidden="true">↓</span>
+            <span>
+              <strong>Текущий раздел</strong>
+              <small id="exportSectionHint">Сохранить выбранный раздел отдельным аудиофайлом</small>
+            </span>
+            <span aria-hidden="true">→</span>
+          </button>
+
+          <button class="share-option" id="exportAllButton" type="button">
+            <span class="share-option-icon" aria-hidden="true">≋</span>
+            <span>
+              <strong>Весь текст</strong>
+              <small>Собрать все разделы в один WAV-файл</small>
+            </span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+
+        <p class="share-status" id="exportStatus" aria-live="polite"></p>
       </section>
 
       <div class="share-backdrop" id="shareBackdrop" hidden></div>
@@ -239,6 +276,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=11"></script>
+    <script src="app.js?v=12"></script>
   </body>
 </html>

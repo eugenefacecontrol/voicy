@@ -6,6 +6,7 @@ const fishPrefetchAhead = 4;
 const fishAudioCacheLimit = 7;
 const fishPersistentCacheName = "voicy-fish-audio-v1";
 const fishPersistentCacheLimit = 40;
+const maxFullExportMinutes = 45;
 
 const elements = {
   textInput: document.querySelector("#textInput"),
@@ -24,6 +25,14 @@ const elements = {
   voiceHint: document.querySelector("#voiceHint"),
   fontSelect: document.querySelector("#fontSelect"),
   pasteButton: document.querySelector("#pasteButton"),
+  exportButton: document.querySelector("#exportButton"),
+  exportDialog: document.querySelector("#exportDialog"),
+  exportBackdrop: document.querySelector("#exportBackdrop"),
+  exportClose: document.querySelector("#exportClose"),
+  exportSectionButton: document.querySelector("#exportSectionButton"),
+  exportSectionHint: document.querySelector("#exportSectionHint"),
+  exportAllButton: document.querySelector("#exportAllButton"),
+  exportStatus: document.querySelector("#exportStatus"),
   shareButton: document.querySelector("#shareButton"),
   shareDialog: document.querySelector("#shareDialog"),
   shareBackdrop: document.querySelector("#shareBackdrop"),
@@ -103,6 +112,7 @@ const state = {
   activeSection: -1,
   speaking: false,
   paused: false,
+  exporting: false,
   session: 0,
 };
 
@@ -1173,6 +1183,154 @@ function getFishAudioBlob(text, referenceId) {
   return request;
 }
 
+function closeExportDialog() {
+  if (state.exporting) return;
+  elements.exportDialog.hidden = true;
+  elements.exportBackdrop.hidden = true;
+}
+
+function openExportDialog() {
+  const text = elements.textInput.value.trim();
+  const plan = createQueue(text);
+  const sectionIndex = getCurrentSectionIndex(plan);
+  const estimatedMinutes = plan.totalWords / 150;
+  const fishSelected = state.selectedVoice?.provider === "fish";
+
+  elements.exportSectionHint.textContent = sectionIndex >= 0
+    ? `Раздел ${sectionIndex + 1} · MP3 или WAV`
+    : "Нет выбранного раздела";
+  elements.exportSectionButton.disabled = !text || !fishSelected || sectionIndex < 0;
+  elements.exportAllButton.disabled = !text || !fishSelected || estimatedMinutes > maxFullExportMinutes;
+  elements.exportStatus.textContent = !fishSelected
+    ? "Экспорт доступен для Fish Audio: Web Speech API не отдаёт готовый аудиофайл."
+    : estimatedMinutes > maxFullExportMinutes
+      ? `Весь текст длиннее ${maxFullExportMinutes} минут — экспортируй его по разделам, чтобы браузеру хватило памяти.`
+      : "Готовые Fish-фрагменты будут взяты из локального кэша.";
+  elements.exportDialog.hidden = false;
+  elements.exportBackdrop.hidden = false;
+  elements.exportClose.focus();
+}
+
+function pcmBytesFromAudioBuffer(buffer, targetSampleRate) {
+  const frameCount = Math.max(1, Math.round(buffer.duration * targetSampleRate));
+  const bytes = new Uint8Array(frameCount * 2);
+  const view = new DataView(bytes.buffer);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
+  const sourceStep = buffer.sampleRate / targetSampleRate;
+
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const sourcePosition = Math.min(buffer.length - 1, frame * sourceStep);
+    const left = Math.floor(sourcePosition);
+    const right = Math.min(buffer.length - 1, left + 1);
+    const fraction = sourcePosition - left;
+    let sample = 0;
+    channels.forEach((channel) => {
+      sample += channel[left] + ((channel[right] - channel[left]) * fraction);
+    });
+    sample = Math.max(-1, Math.min(1, sample / channels.length));
+    view.setInt16(frame * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+  return bytes;
+}
+
+function createWavHeader(dataSize, sampleRate) {
+  const buffer = new ArrayBuffer(44);
+  const view = new DataView(buffer);
+  const writeText = (offset, text) => [...text].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
+  writeText(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeText(8, "WAVE");
+  writeText(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeText(36, "data");
+  view.setUint32(40, dataSize, true);
+  return buffer;
+}
+
+function downloadAudioBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+async function exportFishItems(items, filenameBase) {
+  if (!items.length || state.exporting) return;
+  state.exporting = true;
+  elements.exportClose.disabled = true;
+  elements.exportSectionButton.disabled = true;
+  elements.exportAllButton.disabled = true;
+  let audioContext = null;
+
+  try {
+    if (items.length === 1) {
+      elements.exportStatus.textContent = "Готовлю аудиофайл…";
+      const blob = await getFishAudioBlob(items[0].text, state.selectedVoice.id);
+      downloadAudioBlob(blob, `${filenameBase}.mp3`);
+    } else {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("Этот браузер не умеет собирать WAV-файлы");
+      audioContext = new AudioContextClass();
+      const sampleRate = 44_100;
+      const pcmParts = [];
+      const silence = new Uint8Array(Math.round(sampleRate * 0.08) * 2);
+      let dataSize = 0;
+
+      for (let index = 0; index < items.length; index += 1) {
+        elements.exportStatus.textContent = `Готовлю фрагмент ${index + 1} из ${items.length}…`;
+        const blob = await getFishAudioBlob(items[index].text, state.selectedVoice.id);
+        const decoded = await audioContext.decodeAudioData(await blob.arrayBuffer());
+        const pcm = pcmBytesFromAudioBuffer(decoded, sampleRate);
+        pcmParts.push(pcm);
+        dataSize += pcm.byteLength;
+        if (index < items.length - 1) {
+          pcmParts.push(silence);
+          dataSize += silence.byteLength;
+        }
+      }
+
+      const wav = new Blob([createWavHeader(dataSize, sampleRate), ...pcmParts], { type: "audio/wav" });
+      downloadAudioBlob(wav, `${filenameBase}.wav`);
+    }
+    elements.exportStatus.textContent = "Аудиофайл готов и скачан.";
+  } catch (error) {
+    elements.exportStatus.textContent = error.name === "AbortError"
+      ? "Экспорт остановлен. Попробуй ещё раз."
+      : error.message || "Не удалось подготовить аудиофайл";
+  } finally {
+    await audioContext?.close().catch(() => {});
+    state.exporting = false;
+    elements.exportClose.disabled = false;
+    const text = elements.textInput.value.trim();
+    const plan = createQueue(text);
+    const fishSelected = state.selectedVoice?.provider === "fish";
+    elements.exportSectionButton.disabled = !text || !fishSelected || getCurrentSectionIndex(plan) < 0;
+    elements.exportAllButton.disabled = !text || !fishSelected || (plan.totalWords / 150) > maxFullExportMinutes;
+  }
+}
+
+function exportCurrentSection() {
+  const text = elements.textInput.value.trim();
+  const sectionIndex = getCurrentSectionIndex(createQueue(text));
+  const items = createFishQueue(text).queue.filter((item) => item.sectionIndex === sectionIndex);
+  return exportFishItems(items, `voicy-section-${sectionIndex + 1}`);
+}
+
+function exportAllSections() {
+  const items = createFishQueue(elements.textInput.value.trim()).queue;
+  return exportFishItems(items, "voicy-full-text");
+}
+
 function prefetchFishChunks(currentIndex, session) {
   if (session !== state.session || state.selectedVoice?.provider !== "fish") return;
   for (let offset = 1; offset <= fishPrefetchAhead; offset += 1) {
@@ -1382,6 +1540,11 @@ elements.textInput.addEventListener("input", () => {
 });
 
 elements.pasteButton.addEventListener("click", pasteText);
+elements.exportButton.addEventListener("click", openExportDialog);
+elements.exportClose.addEventListener("click", closeExportDialog);
+elements.exportBackdrop.addEventListener("click", closeExportDialog);
+elements.exportSectionButton.addEventListener("click", exportCurrentSection);
+elements.exportAllButton.addEventListener("click", exportAllSections);
 elements.shareButton.addEventListener("click", openShareDialog);
 elements.shareClose.addEventListener("click", closeShareDialog);
 elements.shareBackdrop.addEventListener("click", closeShareDialog);
@@ -1464,6 +1627,7 @@ elements.sectionsList.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !elements.sectionsPanel.hidden) closeSections();
+  if (event.key === "Escape" && !elements.exportDialog.hidden) closeExportDialog();
   if (event.key === "Escape" && !elements.shareDialog.hidden) closeShareDialog();
   if (event.key === "Escape" && !elements.voicePickerPanel.hidden) closeVoicePicker();
 });

@@ -200,10 +200,20 @@ h2 {
   color: var(--accent-dark);
 }
 
+.export-trigger {
+  border-color: var(--ink);
+}
+
 .share-trigger:hover {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--ink);
+}
+
+.export-trigger:hover {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: white;
 }
 
 #viewModeIcon {
