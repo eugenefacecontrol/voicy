@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=12" />
+    <link rel="stylesheet" href="styles.css?v=13" />
   </head>
   <body>
     <main class="shell">
@@ -32,6 +32,10 @@
             <h2 id="editor-title">Что будем слушать?</h2>
           </div>
           <div class="text-actions">
+            <button class="mode-button lock-trigger" id="childLockButton" type="button" aria-pressed="false">
+              <span id="childLockIcon" aria-hidden="true">🔒</span>
+              <span id="childLockLabel">Для детей</span>
+            </button>
             <button class="mode-button export-trigger" id="exportButton" type="button">
               <span aria-hidden="true">↓</span>
               <span>Аудиофайл</span>
@@ -84,6 +88,29 @@
           <span id="characterCount">0 символов</span>
           <span id="durationEstimate">≈ 0 мин</span>
         </div>
+      </section>
+
+      <div class="share-backdrop" id="childLockBackdrop" hidden></div>
+      <section class="share-dialog" id="childLockDialog" role="dialog" aria-modal="true" aria-labelledby="childLockTitle" hidden>
+        <div class="share-dialog-head">
+          <div>
+            <p class="step">Детский режим</p>
+            <h2 id="childLockTitle">Придумай PIN</h2>
+          </div>
+          <button class="sections-close" id="childLockClose" type="button" aria-label="Закрыть настройку детского режима">×</button>
+        </div>
+        <form class="pin-form" id="childLockForm">
+          <label class="pin-field">
+            <span id="childLockPinLabel">Четыре цифры</span>
+            <input id="childLockPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" required />
+          </label>
+          <label class="pin-field" id="childLockConfirmField">
+            <span>Повтори PIN</span>
+            <input id="childLockConfirm" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" required />
+          </label>
+          <button class="pin-submit" id="childLockSubmit" type="submit">Заблокировать</button>
+        </form>
+        <p class="share-status" id="childLockStatus" aria-live="polite"></p>
       </section>
 
       <div class="share-backdrop" id="exportBackdrop" hidden></div>
@@ -276,6 +303,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=12"></script>
+    <script src="app.js?v=13"></script>
   </body>
 </html>

@@ -25,6 +25,20 @@ const elements = {
   voiceHint: document.querySelector("#voiceHint"),
   fontSelect: document.querySelector("#fontSelect"),
   pasteButton: document.querySelector("#pasteButton"),
+  childLockButton: document.querySelector("#childLockButton"),
+  childLockIcon: document.querySelector("#childLockIcon"),
+  childLockLabel: document.querySelector("#childLockLabel"),
+  childLockDialog: document.querySelector("#childLockDialog"),
+  childLockBackdrop: document.querySelector("#childLockBackdrop"),
+  childLockClose: document.querySelector("#childLockClose"),
+  childLockForm: document.querySelector("#childLockForm"),
+  childLockTitle: document.querySelector("#childLockTitle"),
+  childLockPinLabel: document.querySelector("#childLockPinLabel"),
+  childLockPin: document.querySelector("#childLockPin"),
+  childLockConfirmField: document.querySelector("#childLockConfirmField"),
+  childLockConfirm: document.querySelector("#childLockConfirm"),
+  childLockSubmit: document.querySelector("#childLockSubmit"),
+  childLockStatus: document.querySelector("#childLockStatus"),
   exportButton: document.querySelector("#exportButton"),
   exportDialog: document.querySelector("#exportDialog"),
   exportBackdrop: document.querySelector("#exportBackdrop"),
@@ -113,6 +127,7 @@ const state = {
   speaking: false,
   paused: false,
   exporting: false,
+  childLocked: false,
   session: 0,
 };
 
@@ -248,6 +263,7 @@ function setShareBusy(busy) {
 }
 
 function openShareDialog() {
+  if (state.childLocked) return;
   if (!elements.textInput.value.trim()) {
     updatePlayer("idle", "Сначала вставь текст");
     return;
@@ -628,6 +644,7 @@ function markActiveSectionInList(shouldScroll = false) {
 }
 
 function setReadMode(enabled, shouldFocus = false) {
+  if (state.childLocked && !enabled) return;
   state.readMode = Boolean(enabled);
   elements.textInput.hidden = state.readMode;
   elements.textPreview.hidden = !state.readMode;
@@ -706,6 +723,10 @@ function jumpToAdjacentSection(direction) {
 }
 
 function updateFloatingSettingsButton() {
+  if (state.childLocked) {
+    elements.floatingSettingsButton.hidden = true;
+    return;
+  }
   const settingsTop = elements.settings.getBoundingClientRect().top;
   elements.floatingSettingsButton.hidden = settingsTop <= window.innerHeight - 24;
 }
@@ -713,6 +734,111 @@ function updateFloatingSettingsButton() {
 function closeVoicePicker() {
   elements.voicePickerPanel.hidden = true;
   elements.voicePickerButton.setAttribute("aria-expanded", "false");
+}
+
+function childLockDigest(pin, salt) {
+  const bytes = new TextEncoder().encode(`${salt}:${pin}`);
+  return crypto.subtle.digest("SHA-256", bytes).then((digest) => bytesToBase64Url(new Uint8Array(digest)));
+}
+
+function closeChildLockDialog() {
+  elements.childLockDialog.hidden = true;
+  elements.childLockBackdrop.hidden = true;
+  elements.childLockStatus.textContent = "";
+  elements.childLockForm.reset();
+}
+
+function openChildLockDialog() {
+  const unlocking = state.childLocked;
+  elements.childLockTitle.textContent = unlocking ? "Введи PIN" : "Придумай PIN";
+  elements.childLockPinLabel.textContent = unlocking ? "PIN для разблокировки" : "Четыре цифры";
+  elements.childLockConfirmField.hidden = unlocking;
+  elements.childLockConfirm.required = !unlocking;
+  elements.childLockPin.autocomplete = unlocking ? "current-password" : "new-password";
+  elements.childLockSubmit.textContent = unlocking ? "Разблокировать" : "Заблокировать";
+  elements.childLockStatus.textContent = unlocking
+    ? "После разблокировки настройки снова можно будет менять."
+    : "Запомни PIN: восстановление через аккаунт не предусмотрено.";
+  elements.childLockForm.reset();
+  elements.childLockDialog.hidden = false;
+  elements.childLockBackdrop.hidden = false;
+  elements.childLockPin.focus();
+}
+
+function applyChildLock(locked) {
+  state.childLocked = Boolean(locked);
+  document.body.classList.toggle("child-locked", state.childLocked);
+  elements.childLockButton.classList.toggle("locked", state.childLocked);
+  elements.childLockButton.setAttribute("aria-pressed", String(state.childLocked));
+  elements.childLockIcon.textContent = state.childLocked ? "🔓" : "🔒";
+  elements.childLockLabel.textContent = state.childLocked ? "Разблокировать" : "Для детей";
+
+  if (state.childLocked) {
+    setReadMode(true);
+    closeVoicePicker();
+    closeShareDialog();
+    closeExportDialog();
+  }
+
+  elements.textInput.readOnly = state.childLocked;
+  elements.viewModeButton.disabled = state.childLocked;
+  elements.pasteButton.disabled = state.childLocked;
+  elements.clearButton.disabled = state.childLocked;
+  elements.shareButton.disabled = state.childLocked;
+  elements.exportButton.disabled = state.childLocked;
+  elements.voicePickerButton.disabled = state.childLocked;
+  elements.fontSelect.disabled = state.childLocked;
+  elements.speedButtons.forEach((button) => { button.disabled = state.childLocked; });
+  elements.settings.setAttribute("aria-disabled", String(state.childLocked));
+  updateFloatingSettingsButton();
+}
+
+async function submitChildLock(event) {
+  event.preventDefault();
+  const pin = elements.childLockPin.value.replace(/\D/g, "");
+  const confirmation = elements.childLockConfirm.value.replace(/\D/g, "");
+  if (!/^\d{4}$/.test(pin)) {
+    elements.childLockStatus.textContent = "PIN должен состоять ровно из четырёх цифр.";
+    elements.childLockPin.focus();
+    return;
+  }
+
+  if (!state.childLocked) {
+    if (pin !== confirmation) {
+      elements.childLockStatus.textContent = "PIN-коды не совпадают. Попробуй ещё раз.";
+      elements.childLockConfirm.focus();
+      return;
+    }
+    const salt = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(16)));
+    const hash = await childLockDigest(pin, salt);
+    storage.set("childLockSalt", salt);
+    storage.set("childLockHash", hash);
+    storage.set("childLocked", "true");
+    applyChildLock(true);
+    closeChildLockDialog();
+    updatePlayer(state.speaking ? (state.paused ? "paused" : "playing") : "idle", "Детский режим включён");
+    return;
+  }
+
+  const salt = storage.get("childLockSalt");
+  const savedHash = storage.get("childLockHash");
+  const enteredHash = await childLockDigest(pin, salt);
+  if (!salt || !savedHash || enteredHash !== savedHash) {
+    elements.childLockStatus.textContent = "Неверный PIN.";
+    elements.childLockPin.select();
+    return;
+  }
+
+  storage.remove("childLocked");
+  storage.remove("childLockSalt");
+  storage.remove("childLockHash");
+  applyChildLock(false);
+  closeChildLockDialog();
+  updatePlayer(state.speaking ? (state.paused ? "paused" : "playing") : "idle", "Детский режим выключен");
+}
+
+function keepPinNumeric(event) {
+  event.target.value = event.target.value.replace(/\D/g, "").slice(0, 4);
 }
 
 function openVoicePicker() {
@@ -1190,6 +1316,7 @@ function closeExportDialog() {
 }
 
 function openExportDialog() {
+  if (state.childLocked) return;
   const text = elements.textInput.value.trim();
   const plan = createQueue(text);
   const sectionIndex = getCurrentSectionIndex(plan);
@@ -1484,12 +1611,17 @@ function selectFont(font) {
 }
 
 async function initialize() {
+  const savedLockHash = storage.get("childLockHash");
+  const savedLockSalt = storage.get("childLockSalt");
+  state.childLocked = storage.get("childLocked") === "true" && Boolean(savedLockHash && savedLockSalt);
   let sharedText = null;
   let shareLoadError = "";
-  try {
-    sharedText = await loadSharedTextFromUrl();
-  } catch (error) {
-    shareLoadError = error.message || "Не удалось открыть общую ссылку";
+  if (!state.childLocked) {
+    try {
+      sharedText = await loadSharedTextFromUrl();
+    } catch (error) {
+      shareLoadError = error.message || "Не удалось открыть общую ссылку";
+    }
   }
 
   restoreStoredFishVoice();
@@ -1507,7 +1639,8 @@ async function initialize() {
   state.currentWord = state.resumeWord;
   state.lastSavedWord = state.resumeWord;
   const savedMode = storage.get("readMode");
-  setReadMode(savedMode ? savedMode === "true" : Boolean(elements.textInput.value.trim()));
+  setReadMode(state.childLocked || (savedMode ? savedMode === "true" : Boolean(elements.textInput.value.trim())));
+  applyChildLock(state.childLocked);
   const resumeItem = initialPlan.queue.find((item) => state.resumeWord < item.endWord);
   if (resumeItem) highlightSection(resumeItem.sectionIndex);
   if (state.resumeWord > 0) {
@@ -1540,6 +1673,12 @@ elements.textInput.addEventListener("input", () => {
 });
 
 elements.pasteButton.addEventListener("click", pasteText);
+elements.childLockButton.addEventListener("click", openChildLockDialog);
+elements.childLockClose.addEventListener("click", closeChildLockDialog);
+elements.childLockBackdrop.addEventListener("click", closeChildLockDialog);
+elements.childLockForm.addEventListener("submit", submitChildLock);
+elements.childLockPin.addEventListener("input", keepPinNumeric);
+elements.childLockConfirm.addEventListener("input", keepPinNumeric);
 elements.exportButton.addEventListener("click", openExportDialog);
 elements.exportClose.addEventListener("click", closeExportDialog);
 elements.exportBackdrop.addEventListener("click", closeExportDialog);
@@ -1627,6 +1766,7 @@ elements.sectionsList.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !elements.sectionsPanel.hidden) closeSections();
+  if (event.key === "Escape" && !elements.childLockDialog.hidden) closeChildLockDialog();
   if (event.key === "Escape" && !elements.exportDialog.hidden) closeExportDialog();
   if (event.key === "Escape" && !elements.shareDialog.hidden) closeShareDialog();
   if (event.key === "Escape" && !elements.voicePickerPanel.hidden) closeVoicePicker();
