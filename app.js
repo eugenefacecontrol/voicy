@@ -6,6 +6,39 @@ const fishPrefetchAhead = 4;
 const fishAudioCacheLimit = 7;
 const fishPersistentCacheName = "voicy-fish-audio-v1";
 const fishPersistentCacheLimit = 40;
+const geminiPersistentCacheName = "voicy-gemini-audio-v1";
+const geminiVoices = [
+  ["Zephyr", "Bright"],
+  ["Puck", "Upbeat"],
+  ["Charon", "Informative"],
+  ["Kore", "Firm"],
+  ["Fenrir", "Excitable"],
+  ["Leda", "Youthful"],
+  ["Orus", "Firm"],
+  ["Aoede", "Breezy"],
+  ["Callirrhoe", "Easy-going"],
+  ["Autonoe", "Bright"],
+  ["Enceladus", "Breathy"],
+  ["Iapetus", "Clear"],
+  ["Umbriel", "Easy-going"],
+  ["Algieba", "Smooth"],
+  ["Despina", "Smooth"],
+  ["Erinome", "Clear"],
+  ["Algenib", "Gravelly"],
+  ["Rasalgethi", "Informative"],
+  ["Laomedeia", "Upbeat"],
+  ["Achernar", "Soft"],
+  ["Alnilam", "Firm"],
+  ["Schedar", "Even"],
+  ["Gacrux", "Mature"],
+  ["Pulcherrima", "Forward"],
+  ["Achird", "Friendly"],
+  ["Zubenelgenubi", "Casual"],
+  ["Vindemiatrix", "Gentle"],
+  ["Sadachbia", "Lively"],
+  ["Sadaltager", "Knowledgeable"],
+  ["Sulafat", "Warm"],
+];
 const maxFullExportMinutes = 45;
 
 const elements = {
@@ -110,6 +143,7 @@ const state = {
   selectedVoiceKey: "",
   selectedVoice: null,
   fishAvailable: false,
+  geminiAvailable: false,
   fishAudio: null,
   fishAudioCache: new Map(),
   fishControllers: new Set(),
@@ -164,6 +198,14 @@ function pluralize(number, forms) {
   if (mod10 === 1 && mod100 !== 11) return forms[0];
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
   return forms[2];
+}
+
+function isCloudVoice(voice = state.selectedVoice) {
+  return voice?.provider === "fish" || voice?.provider === "gemini";
+}
+
+function cloudProviderLabel(voice = state.selectedVoice) {
+  return voice?.provider === "gemini" ? "Gemini" : "Fish Audio";
 }
 
 function getSections(text) {
@@ -478,7 +520,7 @@ function createQueue(text) {
   return { queue, sections: sectionData, totalWords: wordCursor };
 }
 
-function createFishQueue(text) {
+function createCloudQueue(text) {
   const sections = getSections(text);
   let wordCursor = 0;
   const queue = [];
@@ -856,6 +898,7 @@ function renderVoiceChoices(filter = elements.voiceSearch.value) {
 
   [
     ["system", "Голоса устройства"],
+    ["gemini", "Gemini · Free API"],
     ["fish", "Fish Audio · Free API"],
   ].forEach(([provider, label]) => {
     const group = choices.filter((voice) => voice.provider === provider);
@@ -880,7 +923,7 @@ function renderVoiceChoices(filter = elements.voiceSearch.value) {
       name.textContent = voice.name;
       meta.textContent = voice.meta;
       badge.className = "voice-badge";
-      badge.textContent = provider === "fish" ? "Fish" : (voice.lang || "Local");
+      badge.textContent = provider === "fish" ? "Fish" : provider === "gemini" ? "Gemini" : (voice.lang || "Local");
       copy.append(name, meta);
       button.append(copy, badge);
       elements.voiceOptions.append(button);
@@ -915,10 +958,15 @@ function selectVoiceChoice(voice, restart = true) {
   if (restart && state.speaking) startSpeech(state.currentWord);
 }
 
-function restoreStoredFishVoice() {
+function restoreStoredCloudVoice() {
   try {
     const voice = JSON.parse(storage.get("voiceChoice", "null"));
-    if (!voice || voice.provider !== "fish" || !voice.key?.startsWith("fish:") || !voice.id || !voice.name) return;
+    const isFish = voice?.provider === "fish" && /^[a-f0-9]{32}$/i.test(voice.id || "");
+    const isGemini = voice?.provider === "gemini" && geminiVoices.some(([name]) => name === voice.id);
+    if (!isFish && !isGemini) {
+      storage.remove("voiceChoice");
+      return;
+    }
     state.voiceChoices.push(voice);
     selectVoiceChoice(voice, false);
   } catch {
@@ -976,12 +1024,50 @@ async function loadFishStatus() {
     const response = await fetch(`${shareApiUrl}/fish/status`);
     const result = await response.json().catch(() => ({}));
     state.fishAvailable = response.ok && result.enabled && result.available;
-    if (state.fishAvailable) {
-      elements.voiceHint.textContent = "Системные голоса и Fish Audio s2.1-pro-free · $0 по Fair Use";
-      await loadFishVoices();
-    }
+    if (state.fishAvailable) await loadFishVoices();
   } catch {
     state.fishAvailable = false;
+  } finally {
+    updateVoiceHint();
+  }
+}
+
+function updateVoiceHint() {
+  const sources = [state.geminiAvailable && "Gemini", state.fishAvailable && "Fish Audio"].filter(Boolean);
+  elements.voiceHint.textContent = sources.length
+    ? `Системные голоса и бесплатные облачные: ${sources.join(", ")}`
+    : "Голоса Gemini и Fish появляются при доступе к бесплатным моделям";
+}
+
+function loadGeminiVoices() {
+  if (!state.geminiAvailable) return;
+  const geminiChoices = geminiVoices.map(([name, style]) => ({
+    key: `gemini:${name}`,
+    id: name,
+    provider: "gemini",
+    name,
+    lang: "",
+    meta: `${style} · мультиязычный · стиль через текст`
+  }));
+  state.voiceChoices = [
+    ...state.voiceChoices.filter((voice) => voice.provider !== "gemini"),
+    ...geminiChoices,
+  ];
+  renderVoiceChoices();
+  chooseInitialVoice();
+}
+
+async function loadGeminiStatus() {
+  if (!shareApiUrl) return;
+  try {
+    const response = await fetch(`${shareApiUrl}/gemini/status`);
+    const result = await response.json().catch(() => ({}));
+    state.geminiAvailable = response.ok && result.enabled && result.available;
+    loadGeminiVoices();
+  } catch {
+    state.geminiAvailable = false;
+  } finally {
+    updateVoiceHint();
   }
 }
 
@@ -1151,14 +1237,14 @@ function startSystemSpeech(startWord = 0) {
   speakCurrent(state.session);
 }
 
-async function speakCurrentFish(session) {
+async function speakCurrentCloud(session) {
   if (!state.speaking || session !== state.session) return;
   if (state.queueIndex >= state.queue.length) {
     state.speaking = false;
     state.paused = false;
     resetSavedPosition();
     elements.progressBar.style.width = "100%";
-    updatePlayer("idle", "Готово — весь текст прочитан Fish Audio");
+    updatePlayer("idle", `Готово — весь текст прочитан через ${cloudProviderLabel()}`);
     return;
   }
 
@@ -1172,10 +1258,10 @@ async function speakCurrentFish(session) {
   savePosition(state.currentWord, true);
   setProgress(state.currentWord);
   highlightSection(item.sectionIndex, state.readMode, "auto");
-  updatePlayer("playing", `Fish Audio готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
+  updatePlayer("playing", `${cloudProviderLabel()} готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
 
   try {
-    const blob = await getFishAudioBlob(spokenText, state.selectedVoice.id);
+    const blob = await getCloudAudioBlob(spokenText);
     if (session !== state.session) return;
     if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
     state.fishObjectUrl = URL.createObjectURL(blob);
@@ -1188,7 +1274,7 @@ async function speakCurrentFish(session) {
     state.fishAudio = audio;
     audio.playbackRate = state.rate;
     audio.preservesPitch = true;
-    prefetchFishChunks(state.queueIndex, session);
+    prefetchCloudChunks(state.queueIndex, session);
 
     audio.ontimeupdate = () => {
       if (session !== state.session || !Number.isFinite(audio.duration) || !audio.duration) return;
@@ -1203,45 +1289,46 @@ async function speakCurrentFish(session) {
       savePosition(state.currentWord, true);
       state.queueIndex += 1;
       setProgress(state.currentWord);
-      speakCurrentFish(session);
+      speakCurrentCloud(session);
     };
     audio.onerror = () => {
-      if (session === state.session) stopSpeech("Не удалось воспроизвести аудио Fish");
+      if (session === state.session) stopSpeech("Не удалось воспроизвести аудио");
     };
 
     updatePlayer(
       "playing",
-      `Fish · раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
+      `${cloudProviderLabel()} · раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
     );
     try {
       await audio.play();
     } catch {
       state.paused = true;
-      updatePlayer("paused", "Аудио Fish готово — нажми «Продолжить»");
+      updatePlayer("paused", "Аудио готово — нажми «Продолжить»");
     }
   } catch (error) {
     if (error.name !== "AbortError" && session === state.session) {
-      stopSpeech(error.message || "Fish Audio временно недоступен");
+      stopSpeech(error.message || "Облачный TTS временно недоступен");
     }
   }
 }
 
-function fishAudioCacheKey(text, referenceId) {
-  return `${referenceId}:${text}`;
-}
-
-function fishPersistentCacheRequest(text, referenceId) {
+function cloudPersistentCacheRequest(text, voice) {
   if (!("caches" in window) || !window.isSecureContext) return null;
-  const voice = encodeURIComponent(referenceId);
+  const provider = voice.provider === "gemini" ? "gemini" : "fish";
+  const voiceKey = encodeURIComponent(provider === "gemini" ? `gemini:${voice.id}` : voice.id);
   const textKey = encodeURIComponent(fingerprint(text));
-  return new Request(`${window.location.origin}/__voicy_fish_audio__/${voice}/${textKey}`);
+  return new Request(`${window.location.origin}/__voicy_${provider}_audio__/${voiceKey}/${textKey}`);
 }
 
-async function readPersistentFishAudio(text, referenceId) {
-  const request = fishPersistentCacheRequest(text, referenceId);
+function cloudPersistentCacheName(voice) {
+  return voice.provider === "gemini" ? geminiPersistentCacheName : fishPersistentCacheName;
+}
+
+async function readPersistentCloudAudio(text, voice) {
+  const request = cloudPersistentCacheRequest(text, voice);
   if (!request) return null;
   try {
-    const cache = await caches.open(fishPersistentCacheName);
+    const cache = await caches.open(cloudPersistentCacheName(voice));
     const response = await cache.match(request);
     if (!response) return null;
     const blob = await response.blob();
@@ -1251,18 +1338,18 @@ async function readPersistentFishAudio(text, referenceId) {
   }
 }
 
-async function persistFishAudio(text, referenceId, blob) {
-  const request = fishPersistentCacheRequest(text, referenceId);
+async function persistCloudAudio(text, voice, blob) {
+  const request = cloudPersistentCacheRequest(text, voice);
   if (!request || !blob.size) return;
   try {
-    const cache = await caches.open(fishPersistentCacheName);
+    const cache = await caches.open(cloudPersistentCacheName(voice));
     await cache.put(request, new Response(blob, {
-      headers: { "Content-Type": blob.type || "audio/mpeg" },
+      headers: { "Content-Type": blob.type || (voice.provider === "gemini" ? "audio/wav" : "audio/mpeg") },
     }));
     const keys = await cache.keys();
     await Promise.all(keys.slice(0, Math.max(0, keys.length - fishPersistentCacheLimit)).map((key) => cache.delete(key)));
   } catch {
-    // Fish playback still works when persistent browser storage is unavailable.
+    // Cloud playback still works when persistent browser storage is unavailable.
   }
 }
 
@@ -1273,29 +1360,34 @@ function trimFishAudioCache() {
   }
 }
 
-function getFishAudioBlob(text, referenceId) {
-  const key = fishAudioCacheKey(text, referenceId);
+function getCloudAudioBlob(text) {
+  const voice = state.selectedVoice;
+  const key = `${voice.key}:${text}`;
   if (state.fishAudioCache.has(key)) return state.fishAudioCache.get(key);
 
   let controller = null;
   const request = (async () => {
-    const cachedBlob = await readPersistentFishAudio(text, referenceId);
+    const cachedBlob = await readPersistentCloudAudio(text, voice);
     if (cachedBlob) return cachedBlob;
 
     controller = new AbortController();
     state.fishControllers.add(controller);
-    const response = await fetch(`${shareApiUrl}/fish/tts`, {
+    const endpoint = voice.provider === "gemini" ? "gemini/tts" : "fish/tts";
+    const payload = voice.provider === "gemini"
+      ? { text, voice: voice.id }
+      : { text, referenceId: voice.id };
+    const response = await fetch(`${shareApiUrl}/${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, referenceId }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      throw new Error(result.error || "Fish Audio не сгенерировал аудио");
+      throw new Error(result.error || `${cloudProviderLabel()} не сгенерировал аудио`);
     }
     const blob = await response.blob();
-    persistFishAudio(text, referenceId, blob);
+    persistCloudAudio(text, voice, blob);
     return blob;
   })().catch((error) => {
     state.fishAudioCache.delete(key);
@@ -1321,18 +1413,18 @@ function openExportDialog() {
   const plan = createQueue(text);
   const sectionIndex = getCurrentSectionIndex(plan);
   const estimatedMinutes = plan.totalWords / 150;
-  const fishSelected = state.selectedVoice?.provider === "fish";
+  const cloudSelected = isCloudVoice();
 
   elements.exportSectionHint.textContent = sectionIndex >= 0
-    ? `Раздел ${sectionIndex + 1} · MP3 или WAV`
+    ? `Раздел ${sectionIndex + 1} · ${cloudSelected && state.selectedVoice.provider === "gemini" ? "WAV" : "MP3 или WAV"}`
     : "Нет выбранного раздела";
-  elements.exportSectionButton.disabled = !text || !fishSelected || sectionIndex < 0;
-  elements.exportAllButton.disabled = !text || !fishSelected || estimatedMinutes > maxFullExportMinutes;
-  elements.exportStatus.textContent = !fishSelected
-    ? "Экспорт доступен для Fish Audio: Web Speech API не отдаёт готовый аудиофайл."
+  elements.exportSectionButton.disabled = !text || !cloudSelected || sectionIndex < 0;
+  elements.exportAllButton.disabled = !text || !cloudSelected || estimatedMinutes > maxFullExportMinutes;
+  elements.exportStatus.textContent = !cloudSelected
+    ? "Экспорт доступен для облачных голосов Gemini и Fish: Web Speech API не отдаёт готовый аудиофайл."
     : estimatedMinutes > maxFullExportMinutes
       ? `Весь текст длиннее ${maxFullExportMinutes} минут — экспортируй его по разделам, чтобы браузеру хватило памяти.`
-      : "Готовые Fish-фрагменты будут взяты из локального кэша.";
+      : "Готовые фрагменты будут взяты из локального кэша.";
   elements.exportDialog.hidden = false;
   elements.exportBackdrop.hidden = false;
   elements.exportClose.focus();
@@ -1402,8 +1494,9 @@ async function exportFishItems(items, filenameBase) {
   try {
     if (items.length === 1) {
       elements.exportStatus.textContent = "Готовлю аудиофайл…";
-      const blob = await getFishAudioBlob(items[0].text, state.selectedVoice.id);
-      downloadAudioBlob(blob, `${filenameBase}.mp3`);
+      const blob = await getCloudAudioBlob(items[0].text);
+      const extension = state.selectedVoice.provider === "gemini" ? "wav" : "mp3";
+      downloadAudioBlob(blob, `${filenameBase}.${extension}`);
     } else {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextClass) throw new Error("Этот браузер не умеет собирать WAV-файлы");
@@ -1415,7 +1508,7 @@ async function exportFishItems(items, filenameBase) {
 
       for (let index = 0; index < items.length; index += 1) {
         elements.exportStatus.textContent = `Готовлю фрагмент ${index + 1} из ${items.length}…`;
-        const blob = await getFishAudioBlob(items[index].text, state.selectedVoice.id);
+        const blob = await getCloudAudioBlob(items[index].text);
         const decoded = await audioContext.decodeAudioData(await blob.arrayBuffer());
         const pcm = pcmBytesFromAudioBuffer(decoded, sampleRate);
         pcmParts.push(pcm);
@@ -1440,36 +1533,36 @@ async function exportFishItems(items, filenameBase) {
     elements.exportClose.disabled = false;
     const text = elements.textInput.value.trim();
     const plan = createQueue(text);
-    const fishSelected = state.selectedVoice?.provider === "fish";
-    elements.exportSectionButton.disabled = !text || !fishSelected || getCurrentSectionIndex(plan) < 0;
-    elements.exportAllButton.disabled = !text || !fishSelected || (plan.totalWords / 150) > maxFullExportMinutes;
+    const cloudSelected = isCloudVoice();
+    elements.exportSectionButton.disabled = !text || !cloudSelected || getCurrentSectionIndex(plan) < 0;
+    elements.exportAllButton.disabled = !text || !cloudSelected || (plan.totalWords / 150) > maxFullExportMinutes;
   }
 }
 
 function exportCurrentSection() {
   const text = elements.textInput.value.trim();
   const sectionIndex = getCurrentSectionIndex(createQueue(text));
-  const items = createFishQueue(text).queue.filter((item) => item.sectionIndex === sectionIndex);
+  const items = createCloudQueue(text).queue.filter((item) => item.sectionIndex === sectionIndex);
   return exportFishItems(items, `voicy-section-${sectionIndex + 1}`);
 }
 
 function exportAllSections() {
-  const items = createFishQueue(elements.textInput.value.trim()).queue;
+  const items = createCloudQueue(elements.textInput.value.trim()).queue;
   return exportFishItems(items, "voicy-full-text");
 }
 
-function prefetchFishChunks(currentIndex, session) {
-  if (session !== state.session || state.selectedVoice?.provider !== "fish") return;
+function prefetchCloudChunks(currentIndex, session) {
+  if (session !== state.session || !isCloudVoice()) return;
   for (let offset = 1; offset <= fishPrefetchAhead; offset += 1) {
     const nextItem = state.queue[currentIndex + offset];
     if (!nextItem) break;
-    getFishAudioBlob(nextItem.text, state.selectedVoice.id).catch(() => {
+    getCloudAudioBlob(nextItem.text).catch(() => {
       // The regular playback path will retry and show a useful error if needed.
     });
   }
 }
 
-function startFishSpeech(startWord = 0) {
+function startCloudSpeech(startWord = 0) {
   const text = elements.textInput.value.trim();
   if (!text) {
     elements.textInput.focus();
@@ -1491,7 +1584,7 @@ function startFishSpeech(startWord = 0) {
   }
   if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
   state.fishObjectUrl = "";
-  const plan = createFishQueue(text);
+  const plan = createCloudQueue(text);
   const safeWord = Math.max(0, Math.min(startWord, Math.max(0, plan.totalWords - 1)));
   state.queue = plan.queue;
   state.totalWords = plan.totalWords;
@@ -1502,11 +1595,11 @@ function startFishSpeech(startWord = 0) {
   state.paused = false;
   savePosition(safeWord, true);
   setProgress(safeWord);
-  speakCurrentFish(state.session);
+  speakCurrentCloud(state.session);
 }
 
 function startSpeech(startWord = 0) {
-  if (state.selectedVoice?.provider === "fish") startFishSpeech(startWord);
+  if (isCloudVoice()) startCloudSpeech(startWord);
   else startSystemSpeech(startWord);
 }
 
@@ -1539,7 +1632,7 @@ async function handlePlay() {
   if (!state.speaking) {
     startSpeech(state.resumeWord);
   } else if (state.paused) {
-    if (state.selectedVoice?.provider === "fish" && state.fishAudio) {
+    if (isCloudVoice() && state.fishAudio) {
       try {
         await state.fishAudio.play();
       } catch {
@@ -1552,7 +1645,7 @@ async function handlePlay() {
     state.paused = false;
     updatePlayer("playing", elements.statusText.textContent);
   } else {
-    if (state.selectedVoice?.provider === "fish") state.fishAudio?.pause();
+    if (isCloudVoice()) state.fishAudio?.pause();
     else synth.pause();
     state.paused = true;
     updatePlayer("paused", "Воспроизведение на паузе");
@@ -1582,7 +1675,7 @@ function loadVoices() {
   }));
   state.voiceChoices = [
     ...systemChoices,
-    ...state.voiceChoices.filter((voice) => voice.provider === "fish"),
+    ...state.voiceChoices.filter((voice) => voice.provider === "gemini" || voice.provider === "fish"),
   ];
   chooseInitialVoice();
   renderVoiceChoices();
@@ -1598,7 +1691,7 @@ function selectRate(rate) {
   storage.set("rate", String(rate));
   updateTextMeta();
   if (state.speaking) {
-    if (state.selectedVoice?.provider === "fish" && state.fishAudio) state.fishAudio.playbackRate = rate;
+    if (isCloudVoice() && state.fishAudio) state.fishAudio.playbackRate = rate;
     else startSpeech(state.currentWord);
   }
 }
@@ -1624,7 +1717,7 @@ async function initialize() {
     }
   }
 
-  restoreStoredFishVoice();
+  restoreStoredCloudVoice();
   elements.textInput.value = sharedText ?? storage.get("text");
   if (sharedText !== null) {
     resetSavedPosition();
@@ -1656,9 +1749,9 @@ async function initialize() {
     loadVoices();
     synth.addEventListener?.("voiceschanged", loadVoices);
   }
-  await loadFishStatus();
+  await Promise.all([loadFishStatus(), loadGeminiStatus()]);
 
-  if (!supportsSpeech && !state.fishAvailable) {
+  if (!supportsSpeech && !state.fishAvailable && !state.geminiAvailable) {
     elements.voicePickerName.textContent = "Голоса недоступны";
     elements.playButton.disabled = true;
     updatePlayer("idle", "Открой Voicy в Chrome, Edge или Safari");
