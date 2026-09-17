@@ -1336,21 +1336,6 @@ footer {
     flex: 1;
   }
 
-  .voice-picker-panel {
-    position: fixed;
-    z-index: 18;
-    top: auto;
-    right: 14px;
-    bottom: 14px;
-    left: 14px;
-    width: auto;
-    max-height: min(72vh, 560px);
-  }
-
-  .voice-options {
-    max-height: min(52vh, 390px);
-  }
-
   .sections-popover {
     position: fixed;
     z-index: 12;
@@ -1482,25 +1467,6 @@ footer {
   flex-direction: column;
 }
 
-@media (max-width: 480px) {
-  .voice-picker-panel {
-    position: fixed;
-    z-index: 18;
-    top: auto;
-    right: 14px;
-    bottom: 14px;
-    left: 14px;
-    width: auto;
-    max-height: min(72vh, 560px);
-  }
-
-  .voice-groups {
-    max-height: min(52vh, 390px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1509,5 +1475,109 @@ footer {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Keep the search outside the scrolling results, including above the keyboard. */
+.voice-picker-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.voice-picker-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.voice-search-wrap,
+.voice-search-status {
+  flex: 0 0 auto;
+}
+
+.voice-search-wrap input {
+  font-size: 16px;
+}
+
+.voice-groups {
+  min-height: 0;
+}
+
+.field,
+.setting-grid,
+.settings > * {
+  min-width: 0;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    width: 100%;
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-left: max(14px, env(safe-area-inset-left));
+  }
+
+  input:not([type="range"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+
+  body.voice-picker-open {
+    position: fixed;
+    top: var(--voice-page-top);
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .voice-picker-panel {
+    position: fixed;
+    z-index: 30;
+    top: var(--voice-viewport-top, 0px);
+    left: 0;
+    right: 0;
+    bottom: auto;
+    width: 100%;
+    height: var(--voice-viewport-height, 100dvh);
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    box-shadow: none;
+    overscroll-behavior: contain;
+  }
+
+  .voice-picker-head {
+    min-height: 56px;
+    padding: 8px 16px;
+  }
+
+  .voice-picker-head .sections-close {
+    width: 44px;
+    height: 44px;
+  }
+
+  .voice-groups {
+    flex: 1 1 auto;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .voice-search-clear {
+    width: 44px;
+    height: 44px;
+    right: 14px;
+  }
+
+  .player {
+    bottom: max(8px, env(safe-area-inset-bottom));
   }
 }

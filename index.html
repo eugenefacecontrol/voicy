@@ -2,12 +2,12 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Voicy — бесплатное озвучивание любого текста прямо в браузере." />
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=16" />
+    <link rel="stylesheet" href="styles.css?v=17" />
   </head>
   <body>
     <main class="shell">
@@ -215,9 +215,13 @@
               </span>
               <span aria-hidden="true">↓</span>
             </button>
-            <div class="voice-picker-panel" id="voicePickerPanel" hidden>
+            <div class="voice-picker-panel" id="voicePickerPanel" role="dialog" aria-labelledby="voicePickerTitle" hidden>
+              <div class="voice-picker-head">
+                <strong id="voicePickerTitle">Выбрать голос</strong>
+                <button class="sections-close" id="voicePickerClose" type="button" aria-label="Закрыть выбор голоса">×</button>
+              </div>
               <div class="voice-search-wrap">
-                <span class="sr-only">Поиск голоса или языка</span>
+                <label class="sr-only" for="voiceSearch">Поиск голоса или языка</label>
                 <input id="voiceSearch" type="search" placeholder="Голос, звезда или язык…" autocomplete="off" />
                 <button class="voice-search-clear" id="voiceSearchClear" type="button" aria-label="Очистить поиск" hidden>×</button>
               </div>
@@ -336,6 +340,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=16"></script>
+    <script src="app.js?v=17"></script>
   </body>
 </html>

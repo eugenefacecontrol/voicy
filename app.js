@@ -845,9 +845,45 @@ function updateFloatingSettingsButton() {
   );
 }
 
+const mobileVoicePicker = window.matchMedia("(max-width: 720px)");
+let voicePageScroll = null;
+
+function syncVoicePickerViewport() {
+  if (elements.voicePickerPanel.hidden) return;
+  const mobile = mobileVoicePicker.matches;
+  if (mobile && voicePageScroll === null) {
+    voicePageScroll = window.scrollY;
+    document.body.style.setProperty("--voice-page-top", `-${voicePageScroll}px`);
+    document.body.classList.add("voice-picker-open");
+  } else if (!mobile) {
+    unlockVoicePickerPage();
+  }
+  elements.voicePickerPanel.setAttribute("aria-modal", String(mobile));
+  const viewport = window.visualViewport;
+  elements.voicePickerPanel.style.setProperty("--voice-viewport-top", `${viewport?.offsetTop || 0}px`);
+  elements.voicePickerPanel.style.setProperty("--voice-viewport-height", `${viewport?.height || window.innerHeight}px`);
+}
+
+function unlockVoicePickerPage() {
+  if (voicePageScroll === null) return;
+  document.body.classList.remove("voice-picker-open");
+  document.body.style.removeProperty("--voice-page-top");
+  window.scrollTo({ top: voicePageScroll, behavior: "instant" });
+  voicePageScroll = null;
+}
+
+window.visualViewport?.addEventListener("resize", syncVoicePickerViewport);
+window.visualViewport?.addEventListener("scroll", syncVoicePickerViewport);
+window.addEventListener("resize", syncVoicePickerViewport);
+document.querySelector("#voicePickerClose").addEventListener("click", closeVoicePicker);
+
 function closeVoicePicker() {
+  const hadFocus = elements.voicePickerPanel.contains(document.activeElement);
+  if (hadFocus) document.activeElement.blur();
   elements.voicePickerPanel.hidden = true;
   elements.voicePickerButton.setAttribute("aria-expanded", "false");
+  unlockVoicePickerPage();
+  if (hadFocus) elements.voicePickerButton.focus({ preventScroll: true });
 }
 
 function childLockDigest(pin, salt) {
@@ -961,7 +997,8 @@ function openVoicePicker() {
   renderVoiceChoices();
   elements.voicePickerPanel.hidden = false;
   elements.voicePickerButton.setAttribute("aria-expanded", "true");
-  elements.voiceSearch.focus();
+  syncVoicePickerViewport();
+  elements.voiceSearch.focus({ preventScroll: true });
 }
 
 function getVoiceGroupState() {
@@ -1933,7 +1970,8 @@ elements.voiceSearch.addEventListener("input", () => {
 elements.voiceSearchClear.addEventListener("click", () => {
   elements.voiceSearch.value = "";
   renderVoiceChoices("");
-  elements.voiceSearch.focus();
+  syncVoicePickerViewport();
+  elements.voiceSearch.focus({ preventScroll: true });
   window.clearTimeout(voiceSearchTimer);
   voiceSearchTimer = window.setTimeout(() => loadFishVoices(""), 350);
 });
@@ -2001,6 +2039,19 @@ elements.sectionsList.addEventListener("click", (event) => {
   startSpeech(Number(button.dataset.startWord));
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Tab" && mobileVoicePicker.matches && !elements.voicePickerPanel.hidden) {
+    const controls = [...elements.voicePickerPanel.querySelectorAll("button, input, [tabindex='0']")]
+      .filter((element) => !element.disabled && element.getClientRects().length);
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus({ preventScroll: true });
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus({ preventScroll: true });
+    }
+  }
   if (event.key === "Escape" && !elements.sectionsPanel.hidden) closeSections();
   if (event.key === "Escape" && !elements.childLockDialog.hidden) closeChildLockDialog();
   if (event.key === "Escape" && !elements.exportDialog.hidden) closeExportDialog();
