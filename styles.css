@@ -864,6 +864,7 @@ textarea::placeholder {
 }
 
 .voice-search-wrap {
+  position: relative;
   display: block;
   border-bottom: 1px solid var(--line);
   padding: 12px;
@@ -873,9 +874,28 @@ textarea::placeholder {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 3px;
-  padding: 11px 12px;
+  padding: 11px 42px 11px 12px;
   color: var(--ink);
   background: white;
+}
+
+.voice-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 21px;
+  width: 28px;
+  height: 28px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: rgba(25, 24, 22, 0.08);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.voice-search-clear[hidden] {
+  display: none;
 }
 
 .voice-options {
@@ -1389,6 +1409,95 @@ footer {
 
   footer {
     flex-direction: column;
+  }
+}
+
+.voice-group {
+  border-bottom: 1px solid var(--line);
+}
+
+.voice-groups {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.voice-group-header {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  margin: 0;
+  background: var(--panel);
+}
+
+.voice-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  padding: 11px 14px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.voice-group-title {
+  min-width: 0;
+  flex: 1;
+  font-family: "DM Mono", monospace;
+}
+
+.voice-group-count {
+  min-width: 26px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: var(--muted);
+  background: rgba(25, 24, 22, 0.08);
+  text-align: center;
+  font-family: "DM Mono", monospace;
+  font-size: 0.62rem;
+}
+
+.voice-group-icon {
+  display: inline-block;
+  font-size: 1rem;
+  transition: transform 0.12s ease;
+}
+
+.voice-group-toggle[aria-expanded="false"] .voice-group-icon {
+  transform: rotate(-90deg);
+}
+
+.voice-group-body[hidden] {
+  display: none;
+}
+
+.voice-group-body[role="listbox"] {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 480px) {
+  .voice-picker-panel {
+    position: fixed;
+    z-index: 18;
+    top: auto;
+    right: 14px;
+    bottom: 14px;
+    left: 14px;
+    width: auto;
+    max-height: min(72vh, 560px);
+  }
+
+  .voice-groups {
+    max-height: min(52vh, 390px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 }
 

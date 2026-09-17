@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=15" />
+    <link rel="stylesheet" href="styles.css?v=16" />
   </head>
   <body>
     <main class="shell">
@@ -216,11 +216,43 @@
               <span aria-hidden="true">↓</span>
             </button>
             <div class="voice-picker-panel" id="voicePickerPanel" hidden>
-              <label class="voice-search-wrap">
+              <div class="voice-search-wrap">
                 <span class="sr-only">Поиск голоса или языка</span>
                 <input id="voiceSearch" type="search" placeholder="Голос, звезда или язык…" autocomplete="off" />
-              </label>
-              <div class="voice-options" id="voiceOptions" role="listbox"></div>
+                <button class="voice-search-clear" id="voiceSearchClear" type="button" aria-label="Очистить поиск" hidden>×</button>
+              </div>
+              <div class="voice-groups" id="voiceGroups">
+                <div class="voice-group" data-provider="system">
+                  <h3 class="voice-group-header">
+                    <button type="button" class="voice-group-toggle" aria-expanded="true" aria-controls="voice-system-group">
+                      <span class="voice-group-title">Голоса устройства</span>
+                      <span class="voice-group-count" aria-label="Количество голосов">0</span>
+                      <span class="voice-group-icon" aria-hidden="true">⌄</span>
+                    </button>
+                  </h3>
+                  <div class="voice-group-body" id="voice-system-group" role="listbox"></div>
+                </div>
+                <div class="voice-group" data-provider="gemini">
+                  <h3 class="voice-group-header">
+                    <button type="button" class="voice-group-toggle" aria-expanded="false" aria-controls="voice-gemini-group">
+                      <span class="voice-group-title">Gemini · Free API</span>
+                      <span class="voice-group-count" aria-label="Количество голосов">0</span>
+                      <span class="voice-group-icon" aria-hidden="true">⌄</span>
+                    </button>
+                  </h3>
+                  <div class="voice-group-body" id="voice-gemini-group" role="listbox" hidden></div>
+                </div>
+                <div class="voice-group" data-provider="fish">
+                  <h3 class="voice-group-header">
+                    <button type="button" class="voice-group-toggle" aria-expanded="false" aria-controls="voice-fish-group">
+                      <span class="voice-group-title">Fish Audio · Free API</span>
+                      <span class="voice-group-count" aria-label="Количество голосов">0</span>
+                      <span class="voice-group-icon" aria-hidden="true">⌄</span>
+                    </button>
+                  </h3>
+                  <div class="voice-group-body" id="voice-fish-group" role="listbox" hidden></div>
+                </div>
+              </div>
               <p class="voice-search-status" id="voiceSearchStatus" aria-live="polite"></p>
             </div>
             <select id="voiceSelect" class="sr-only" tabindex="-1" aria-hidden="true">
@@ -304,6 +336,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=15"></script>
+    <script src="app.js?v=16"></script>
   </body>
 </html>

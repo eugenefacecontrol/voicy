@@ -53,7 +53,11 @@ const elements = {
   voicePickerMeta: document.querySelector("#voicePickerMeta"),
   voicePickerPanel: document.querySelector("#voicePickerPanel"),
   voiceSearch: document.querySelector("#voiceSearch"),
-  voiceOptions: document.querySelector("#voiceOptions"),
+  voiceSearchClear: document.querySelector("#voiceSearchClear"),
+  voiceGroups: document.querySelector("#voiceGroups"),
+  voiceSystemGroup: document.querySelector("#voice-system-group"),
+  voiceGeminiGroup: document.querySelector("#voice-gemini-group"),
+  voiceFishGroup: document.querySelector("#voice-fish-group"),
   voiceSearchStatus: document.querySelector("#voiceSearchStatus"),
   voiceHint: document.querySelector("#voiceHint"),
   fontSelect: document.querySelector("#fontSelect"),
@@ -952,9 +956,34 @@ function keepPinNumeric(event) {
 }
 
 function openVoicePicker() {
+  const selectedProvider = state.selectedVoice?.provider || "system";
+  setVoiceGroupExpanded(selectedProvider, true);
+  renderVoiceChoices();
   elements.voicePickerPanel.hidden = false;
   elements.voicePickerButton.setAttribute("aria-expanded", "true");
   elements.voiceSearch.focus();
+}
+
+function getVoiceGroupState() {
+  try {
+    return JSON.parse(storage.get("voiceGroups", "{}")) || {};
+  } catch {
+    return {};
+  }
+}
+
+function setVoiceGroupExpanded(provider, expanded, persist = true) {
+  const group = elements.voiceGroups.querySelector(`[data-provider="${provider}"]`);
+  const toggle = group?.querySelector(".voice-group-toggle");
+  const body = group?.querySelector(".voice-group-body");
+  if (!toggle || !body) return;
+  toggle.setAttribute("aria-expanded", String(expanded));
+  body.hidden = !expanded;
+  if (!persist) return;
+  storage.set("voiceGroups", JSON.stringify({
+    ...getVoiceGroupState(),
+    [provider]: expanded,
+  }));
 }
 
 function renderVoiceChoices(filter = elements.voiceSearch.value) {
@@ -962,22 +991,28 @@ function renderVoiceChoices(filter = elements.voiceSearch.value) {
   const choices = state.voiceChoices.filter((voice) => (
     !query || `${voice.name} ${voice.meta} ${voice.provider}`.toLocaleLowerCase("ru").includes(query)
   ));
-  elements.voiceOptions.innerHTML = "";
+  const savedGroups = getVoiceGroupState();
+  const groupBodies = {
+    system: elements.voiceSystemGroup,
+    gemini: elements.voiceGeminiGroup,
+    fish: elements.voiceFishGroup,
+  };
 
-  [
-    ["system", "Голоса устройства"],
-    ["gemini", "Gemini · Free API"],
-    ["fish", "Fish Audio · Free API"],
-  ].forEach(([provider, label]) => {
-    const group = choices.filter((voice) => voice.provider === provider);
-    if (!group.length) return;
+  Object.entries(groupBodies).forEach(([provider, body]) => {
+    const wrapper = body.closest(".voice-group");
+    const providerChoices = choices.filter((voice) => voice.provider === provider);
+    wrapper.hidden = providerChoices.length === 0;
+    wrapper.querySelector(".voice-group-count").textContent = String(providerChoices.length);
+    body.replaceChildren();
 
-    const heading = document.createElement("p");
-    heading.className = "voice-group-label";
-    heading.textContent = label;
-    elements.voiceOptions.append(heading);
+    if (query && providerChoices.length) {
+      setVoiceGroupExpanded(provider, true, false);
+    } else if (!query) {
+      const expanded = savedGroups[provider] ?? provider === "system";
+      setVoiceGroupExpanded(provider, expanded, false);
+    }
 
-    group.forEach((voice) => {
+    providerChoices.forEach((voice) => {
       const button = document.createElement("button");
       const copy = document.createElement("span");
       const name = document.createElement("strong");
@@ -994,15 +1029,15 @@ function renderVoiceChoices(filter = elements.voiceSearch.value) {
       badge.textContent = provider === "fish" ? "Fish" : provider === "gemini" ? "Gemini" : (voice.lang || "Local");
       copy.append(name, meta);
       button.append(copy, badge);
-      elements.voiceOptions.append(button);
+      body.append(button);
     });
   });
 
+  elements.voiceSearchClear.hidden = !filter;
   if (!choices.length) {
-    const empty = document.createElement("p");
-    empty.className = "voice-search-status";
-    empty.textContent = state.fishAvailable ? "Ничего не найдено. Попробуй имя или язык." : "Среди голосов устройства ничего не найдено.";
-    elements.voiceOptions.append(empty);
+    elements.voiceSearchStatus.textContent = "Ничего не найдено. Попробуй имя или язык.";
+  } else if (elements.voiceSearchStatus.textContent.startsWith("Ничего")) {
+    elements.voiceSearchStatus.textContent = "";
   }
 }
 
@@ -1021,6 +1056,7 @@ function selectVoiceChoice(voice, restart = true) {
   }));
   elements.voicePickerName.textContent = voice.name;
   elements.voicePickerMeta.textContent = voice.meta;
+  setVoiceGroupExpanded(voice.provider, true);
   renderVoiceChoices();
   closeVoicePicker();
   if (restart && state.speaking) startSpeech(state.currentWord);
@@ -1878,7 +1914,13 @@ elements.voicePickerButton.addEventListener("click", () => {
   if (elements.voicePickerPanel.hidden) openVoicePicker();
   else closeVoicePicker();
 });
-elements.voiceOptions.addEventListener("click", (event) => {
+elements.voiceGroups.addEventListener("click", (event) => {
+  const toggle = event.target.closest(".voice-group-toggle");
+  if (toggle) {
+    const provider = toggle.closest(".voice-group").dataset.provider;
+    setVoiceGroupExpanded(provider, toggle.getAttribute("aria-expanded") !== "true");
+    return;
+  }
   const button = event.target.closest(".voice-option");
   if (!button) return;
   selectVoiceChoice(state.voiceChoices.find((voice) => voice.key === button.dataset.voiceKey));
@@ -1887,6 +1929,13 @@ elements.voiceSearch.addEventListener("input", () => {
   renderVoiceChoices();
   window.clearTimeout(voiceSearchTimer);
   voiceSearchTimer = window.setTimeout(() => loadFishVoices(elements.voiceSearch.value), 350);
+});
+elements.voiceSearchClear.addEventListener("click", () => {
+  elements.voiceSearch.value = "";
+  renderVoiceChoices("");
+  elements.voiceSearch.focus();
+  window.clearTimeout(voiceSearchTimer);
+  voiceSearchTimer = window.setTimeout(() => loadFishVoices(""), 350);
 });
 elements.viewModeButton.addEventListener("click", () => {
   setReadMode(!state.readMode, state.readMode);
