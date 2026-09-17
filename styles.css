@@ -344,6 +344,15 @@ textarea::placeholder {
   background: rgba(255, 92, 53, 0.1);
 }
 
+.preview-word.current-word {
+  border-radius: 0.18em;
+  padding: 0.04em 0.08em;
+  margin: -0.04em -0.08em;
+  background: rgba(255, 92, 53, 0.3);
+  box-shadow: 0 0 0 1px rgba(255, 92, 53, 0.18);
+  transition: background 100ms ease;
+}
+
 .preview-empty {
   margin: 0;
   color: #aaa196;
@@ -656,6 +665,7 @@ textarea::placeholder {
 }
 
 .child-locked .settings select:disabled,
+.child-locked .settings input:disabled,
 .child-locked .settings button:disabled,
 .child-locked .text-actions button:disabled {
   cursor: not-allowed;
@@ -985,29 +995,43 @@ select {
   font-weight: 600;
 }
 
-.speed-options {
+.speed-slider-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  border: 1px solid var(--line);
-  border-radius: 3px;
+  grid-template-columns: minmax(0, 1fr) 62px;
+  gap: 14px;
+  align-items: center;
 }
 
-.speed-button {
-  border: 0;
-  border-right: 1px solid var(--line);
-  padding: 13px 10px;
-  color: var(--muted);
-  background: rgba(255, 250, 242, 0.5);
+.speed-slider-row input[type="range"] {
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: grab;
 }
 
-.speed-button:last-child {
-  border-right: 0;
+.speed-slider-row input[type="range"]:active {
+  cursor: grabbing;
 }
 
-.speed-button:hover,
-.speed-button.active {
+.speed-slider-row output {
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 7px 8px;
   color: white;
   background: var(--ink);
+  font-family: "DM Mono", monospace;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.speed-scale {
+  display: flex;
+  justify-content: space-between;
+  margin: 2px 76px 0 1px;
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+  font-size: 0.56rem;
 }
 
 .player {

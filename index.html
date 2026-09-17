@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=13" />
+    <link rel="stylesheet" href="styles.css?v=15" />
   </head>
   <body>
     <main class="shell">
@@ -195,8 +195,8 @@
       </button>
 
       <button class="floating-settings" id="floatingSettingsButton" type="button" aria-controls="settings" hidden>
-        <span aria-hidden="true">↓</span>
-        <span>Настройки</span>
+        <span id="floatingSettingsIcon" aria-hidden="true">↓</span>
+        <span id="floatingSettingsLabel">Настройки</span>
       </button>
 
       <section class="settings" id="settings" aria-labelledby="settings-title">
@@ -245,11 +245,12 @@
 
         <fieldset class="speed-field">
           <legend>Скорость</legend>
-          <div class="speed-options">
-            <button class="speed-button active" type="button" data-rate="1" aria-pressed="true">1×</button>
-            <button class="speed-button" type="button" data-rate="2" aria-pressed="false">2×</button>
-            <button class="speed-button" type="button" data-rate="3" aria-pressed="false">3×</button>
-            <button class="speed-button" type="button" data-rate="4" aria-pressed="false">4×</button>
+          <div class="speed-slider-row">
+            <input id="speedSlider" type="range" min="1" max="4" step="0.1" value="1" aria-label="Скорость воспроизведения" />
+            <output id="speedValue" for="speedSlider">1.0×</output>
+          </div>
+          <div class="speed-scale" aria-hidden="true">
+            <span>1×</span><span>2×</span><span>3×</span><span>4×</span>
           </div>
         </fieldset>
       </section>
@@ -303,6 +304,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=13"></script>
+    <script src="app.js?v=15"></script>
   </body>
 </html>

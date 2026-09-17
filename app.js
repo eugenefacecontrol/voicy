@@ -109,12 +109,15 @@ const elements = {
   floatingSectionsButton: document.querySelector("#floatingSectionsButton"),
   floatingSectionCount: document.querySelector("#floatingSectionCount"),
   floatingSettingsButton: document.querySelector("#floatingSettingsButton"),
+  floatingSettingsIcon: document.querySelector("#floatingSettingsIcon"),
+  floatingSettingsLabel: document.querySelector("#floatingSettingsLabel"),
   settings: document.querySelector("#settings"),
   characterCount: document.querySelector("#characterCount"),
   durationEstimate: document.querySelector("#durationEstimate"),
   progressBar: document.querySelector("#progressBar"),
   player: document.querySelector(".player"),
-  speedButtons: [...document.querySelectorAll(".speed-button")],
+  speedSlider: document.querySelector("#speedSlider"),
+  speedValue: document.querySelector("#speedValue"),
 };
 
 const fontStacks = {
@@ -167,6 +170,8 @@ const state = {
 
 let preparedShare = null;
 let voiceSearchTimer = null;
+let lastHapticRate = null;
+let lastWordScrollAt = 0;
 
 const storage = {
   get(key, fallback = "") {
@@ -635,31 +640,88 @@ function renderTextPreview(text, plan = createQueue(text)) {
 
   sections.forEach((section, index) => {
     const paragraph = document.createElement("p");
+    const copy = document.createElement("span");
     const playButton = document.createElement("button");
     const sectionData = plan.sections[index];
     paragraph.className = "preview-section";
     paragraph.dataset.sectionIndex = String(index);
     paragraph.dataset.sectionNumber = String(index + 1).padStart(2, "0");
+    paragraph.dataset.startWord = String(sectionData?.startWord || 0);
     paragraph.tabIndex = 0;
+    copy.className = "preview-copy";
+    copy.textContent = section;
     playButton.type = "button";
     playButton.className = "preview-play-button";
     playButton.dataset.sectionIndex = String(index);
     playButton.dataset.startWord = String(sectionData?.startWord || 0);
     playButton.setAttribute("aria-label", `Озвучить раздел ${index + 1} с начала`);
     playButton.textContent = "▶ Озвучить раздел";
-    paragraph.append(document.createTextNode(section), playButton);
+    paragraph.append(copy, playButton);
     elements.textPreview.append(paragraph);
   });
 }
 
+function resetTrackedWords(section) {
+  const copy = section?.querySelector(".preview-copy");
+  if (copy?.querySelector(".preview-word")) copy.textContent = copy.textContent;
+}
+
+function prepareTrackedWords(section) {
+  const copy = section?.querySelector(".preview-copy");
+  if (!copy || copy.querySelector(".preview-word")) return;
+  const fragment = document.createDocumentFragment();
+  let wordIndex = 0;
+  (copy.textContent.match(/\s+|\S+/g) || []).forEach((token) => {
+    if (/^\s+$/u.test(token)) {
+      fragment.append(document.createTextNode(token));
+      return;
+    }
+    const word = document.createElement("span");
+    word.className = "preview-word";
+    word.dataset.wordIndex = String(wordIndex);
+    word.textContent = token;
+    fragment.append(word);
+    wordIndex += 1;
+  });
+  copy.replaceChildren(fragment);
+}
+
+function highlightCurrentWord(globalWord, shouldScroll = false) {
+  const section = elements.textPreview.querySelector(".preview-section.active");
+  if (!section) return;
+  prepareTrackedWords(section);
+  const offset = Math.max(0, Math.round(globalWord) - Number(section.dataset.startWord || 0));
+  const words = section.querySelectorAll(".preview-word");
+  const word = words[Math.min(offset, Math.max(0, words.length - 1))];
+  const previous = section.querySelector(".preview-word.current-word");
+  if (!word || previous === word) return;
+  previous?.classList.remove("current-word");
+  word.classList.add("current-word");
+
+  if (!shouldScroll || !state.readMode) return;
+  const rect = word.getBoundingClientRect();
+  const now = Date.now();
+  const outsideReadingZone = rect.top < window.innerHeight * 0.24 || rect.bottom > window.innerHeight * 0.68;
+  if (outsideReadingZone && now - lastWordScrollAt > 450) {
+    lastWordScrollAt = now;
+    const targetTop = window.scrollY + rect.top - (window.innerHeight * 0.42);
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+  }
+}
+
 function highlightSection(sectionIndex, shouldScroll = false, scrollBehavior = "smooth") {
-  elements.textPreview.querySelector(".preview-section.active")?.classList.remove("active");
+  const previousSection = elements.textPreview.querySelector(".preview-section.active");
   const section = elements.textPreview.querySelector(`[data-section-index="${sectionIndex}"]`);
+  if (previousSection && previousSection !== section) {
+    previousSection.classList.remove("active");
+    resetTrackedWords(previousSection);
+  }
   state.activeSection = section ? sectionIndex : -1;
   markActiveSectionInList();
   updateSectionSkipButtons();
   if (!section) return;
   section.classList.add("active");
+  prepareTrackedWords(section);
   if (shouldScroll) {
     window.requestAnimationFrame(() => {
       const targetTop = window.scrollY + section.getBoundingClientRect().top - (window.innerHeight * 0.32);
@@ -765,12 +827,18 @@ function jumpToAdjacentSection(direction) {
 }
 
 function updateFloatingSettingsButton() {
-  if (state.childLocked) {
-    elements.floatingSettingsButton.hidden = true;
-    return;
-  }
   const settingsTop = elements.settings.getBoundingClientRect().top;
-  elements.floatingSettingsButton.hidden = settingsTop <= window.innerHeight - 24;
+  const settingsBelow = settingsTop > window.innerHeight - 24;
+  const showScrollTop = !settingsBelow && window.scrollY > 180;
+  const showSettings = settingsBelow && !state.childLocked;
+  elements.floatingSettingsButton.hidden = !showSettings && !showScrollTop;
+  elements.floatingSettingsButton.dataset.action = showScrollTop ? "top" : "settings";
+  elements.floatingSettingsIcon.textContent = showScrollTop ? "↑" : "↓";
+  elements.floatingSettingsLabel.textContent = showScrollTop ? "Наверх" : "Настройки";
+  elements.floatingSettingsButton.setAttribute(
+    "aria-label",
+    showScrollTop ? "Вернуться наверх" : "Перейти к настройкам",
+  );
 }
 
 function closeVoicePicker() {
@@ -830,7 +898,7 @@ function applyChildLock(locked) {
   elements.exportButton.disabled = state.childLocked;
   elements.voicePickerButton.disabled = state.childLocked;
   elements.fontSelect.disabled = state.childLocked;
-  elements.speedButtons.forEach((button) => { button.disabled = state.childLocked; });
+  elements.speedSlider.disabled = state.childLocked;
   elements.settings.setAttribute("aria-disabled", String(state.childLocked));
   updateFloatingSettingsButton();
 }
@@ -1084,6 +1152,7 @@ function updateTextMeta() {
   if (!state.speaking) state.totalWords = plan.totalWords;
   renderTextPreview(text, plan);
   if (state.activeSection >= 0) highlightSection(state.activeSection);
+  if (state.activeSection >= 0) highlightCurrentWord(state.currentWord || state.resumeWord);
   renderSections(plan);
   storage.set("text", text);
   window.requestAnimationFrame(updateFloatingSettingsButton);
@@ -1178,7 +1247,8 @@ function speakCurrent(session) {
     state.seekWord = null;
     savePosition(state.currentWord, true);
     setProgress(state.currentWord);
-    highlightSection(item.sectionIndex, state.readMode, "auto");
+    highlightSection(item.sectionIndex, false);
+    highlightCurrentWord(state.currentWord, state.readMode);
     updatePlayer(
       "playing",
       `Раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
@@ -1191,6 +1261,7 @@ function speakCurrent(session) {
     state.currentWord = Math.min(item.endWord, item.startWord + relativeStart + wordsBefore);
     savePosition(state.currentWord);
     setProgress(state.currentWord);
+    highlightCurrentWord(state.currentWord, state.readMode);
   };
 
   utterance.onend = () => {
@@ -1257,7 +1328,8 @@ async function speakCurrentCloud(session) {
   state.currentWord = segmentStartWord;
   savePosition(state.currentWord, true);
   setProgress(state.currentWord);
-  highlightSection(item.sectionIndex, state.readMode, "auto");
+  highlightSection(item.sectionIndex, false);
+  highlightCurrentWord(state.currentWord, state.readMode);
   updatePlayer("playing", `${cloudProviderLabel()} готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
 
   try {
@@ -1282,6 +1354,7 @@ async function speakCurrentCloud(session) {
       state.currentWord = Math.min(item.endWord, Math.round(segmentStartWord + ((item.endWord - segmentStartWord) * fraction)));
       savePosition(state.currentWord);
       setProgress(state.currentWord);
+      highlightCurrentWord(state.currentWord, state.readMode);
     };
     audio.onended = () => {
       if (session !== state.session || !state.speaking) return;
@@ -1681,19 +1754,33 @@ function loadVoices() {
   renderVoiceChoices();
 }
 
-function selectRate(rate) {
-  state.rate = rate;
-  elements.speedButtons.forEach((button) => {
-    const active = Number(button.dataset.rate) === rate;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-pressed", String(active));
-  });
-  storage.set("rate", String(rate));
-  updateTextMeta();
+function selectRate(rate, refresh = true, restartSystem = true) {
+  const normalizedRate = Math.max(1, Math.min(4, Math.round(Number(rate) * 10) / 10));
+  state.rate = normalizedRate;
+  elements.speedSlider.value = String(normalizedRate);
+  elements.speedSlider.setAttribute("aria-valuetext", `${normalizedRate.toFixed(1)}×`);
+  elements.speedValue.value = `${normalizedRate.toFixed(1)}×`;
+  elements.speedValue.textContent = `${normalizedRate.toFixed(1)}×`;
+  storage.set("rate", String(normalizedRate));
+  if (refresh) updateTextMeta();
   if (state.speaking) {
-    if (isCloudVoice() && state.fishAudio) state.fishAudio.playbackRate = rate;
-    else startSpeech(state.currentWord);
+    if (isCloudVoice() && state.fishAudio) state.fishAudio.playbackRate = normalizedRate;
+    else if (restartSystem) startSpeech(state.currentWord);
   }
+}
+
+function handleSpeedInput(event) {
+  const rate = Number(event.target.value);
+  if (rate !== lastHapticRate) {
+    lastHapticRate = rate;
+    navigator.vibrate?.(Number.isInteger(rate) ? 14 : 5);
+  }
+  selectRate(rate, false, false);
+}
+
+function commitSpeedChange() {
+  updateTextMeta();
+  if (state.speaking && !isCloudVoice()) startSpeech(state.currentWord);
 }
 
 function selectFont(font) {
@@ -1724,7 +1811,7 @@ async function initialize() {
     storage.set("readMode", "true");
   }
   selectFont(storage.get("font", "literary"));
-  selectRate(Number(storage.get("rate", "1")) || 1);
+  selectRate(Number(storage.get("rate", "1")) || 1, false, false);
   updateTextMeta();
   const initialPlan = createQueue(elements.textInput.value);
   state.totalWords = initialPlan.totalWords;
@@ -1735,7 +1822,10 @@ async function initialize() {
   setReadMode(state.childLocked || (savedMode ? savedMode === "true" : Boolean(elements.textInput.value.trim())));
   applyChildLock(state.childLocked);
   const resumeItem = initialPlan.queue.find((item) => state.resumeWord < item.endWord);
-  if (resumeItem) highlightSection(resumeItem.sectionIndex);
+  if (resumeItem) {
+    highlightSection(resumeItem.sectionIndex);
+    highlightCurrentWord(state.resumeWord);
+  }
   if (state.resumeWord > 0) {
     setProgress(state.resumeWord);
     updatePlayer("idle", `Продолжить с ${timeForWord(state.resumeWord)}`);
@@ -1845,7 +1935,11 @@ elements.floatingSectionsButton.addEventListener("click", () => {
   else closeSections();
 });
 elements.floatingSettingsButton.addEventListener("click", () => {
-  elements.settings.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (elements.floatingSettingsButton.dataset.action === "top") {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } else {
+    elements.settings.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 });
 elements.sectionsClose.addEventListener("click", closeSections);
 elements.sectionsBackdrop.addEventListener("click", closeSections);
@@ -1868,9 +1962,8 @@ document.addEventListener("click", (event) => {
   if (!elements.voicePickerPanel.hidden && !event.target.closest(".voice-field")) closeVoicePicker();
 });
 elements.fontSelect.addEventListener("change", () => selectFont(elements.fontSelect.value));
-elements.speedButtons.forEach((button) => {
-  button.addEventListener("click", () => selectRate(Number(button.dataset.rate)));
-});
+elements.speedSlider.addEventListener("input", handleSpeedInput);
+elements.speedSlider.addEventListener("change", commitSpeedChange);
 
 window.addEventListener("beforeunload", () => {
   if (supportsSpeech) synth.cancel();
