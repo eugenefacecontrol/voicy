@@ -149,6 +149,7 @@ const state = {
   voicePickerRole: null,
   voicePickerTrigger: null,
   roleVoices: Object.create(null),
+  roleNames: Object.create(null),
   voices: [],
   voiceChoices: [],
   selectedVoiceKey: "",
@@ -675,7 +676,7 @@ function renderTextPreview(text, plan = createQueue(text)) {
     if (state.roleMode) {
       const roleLabel = document.createElement("strong");
       roleLabel.className = "preview-role";
-      roleLabel.textContent = turns[index]?.role;
+      roleLabel.textContent = state.roleNames[turns[index]?.role] || turns[index]?.role;
       paragraph.append(roleLabel);
     }
     paragraph.append(copy, playButton);
@@ -1023,7 +1024,7 @@ function openVoicePicker(role = null, trigger = elements.voicePickerButton) {
   state.voicePickerRole = role;
   state.voicePickerTrigger = trigger;
   trigger.closest(".voice-field").append(elements.voicePickerPanel);
-  document.querySelector("#voicePickerTitle").textContent = role ? `Голос · ${role}` : "Выбрать голос";
+  document.querySelector("#voicePickerTitle").textContent = role ? `Голос · ${state.roleNames[role] || role}` : "Выбрать голос";
   const selectedProvider = (role ? state.roleVoices[role] : state.selectedVoice)?.provider || "system";
   setVoiceGroupExpanded(selectedProvider, true);
   elements.voicePickerPanel.hidden = false;
@@ -1941,6 +1942,7 @@ async function initialize() {
 
   state.roleMode = storage.get("roleMode") === "true";
   try { state.roleVoices = Object.assign(Object.create(null), JSON.parse(storage.get("roleVoices", "{}"))); } catch {}
+  try { state.roleNames = Object.assign(Object.create(null), JSON.parse(storage.get("roleNames", "{}"))); } catch {}
   syncRolesButton();
   restoreStoredCloudVoice();
   elements.textInput.value = sharedText ?? storage.get("text");
@@ -2210,6 +2212,7 @@ rolesPrompt.value = `Подготовь следующий текст для о�
 
 function syncRolesButton() {
   document.querySelector("#rolesToggle").checked = state.roleMode;
+  document.querySelector("#rolesSettingsToggle").checked = state.roleMode;
   const button = document.querySelector("#rolesButton");
   button.setAttribute("aria-pressed", String(state.roleMode));
   button.textContent = state.roleMode ? "По ролям · включено" : "Читать по ролям";
@@ -2220,10 +2223,19 @@ function renderRoleChoices() {
   const container = document.querySelector("#rolesVoices");
   document.querySelector("#rolesSettings").hidden = !state.roleMode;
   document.querySelector("#rolesDisable").disabled = state.childLocked;
+  document.querySelector("#rolesSettingsToggle").disabled = state.childLocked;
+  document.querySelector("#rolesToggle").disabled = state.childLocked;
+  elements.voicePickerButton.closest(".voice-field").hidden = state.roleMode;
   container.replaceChildren();
   if (!state.roleMode) return;
   const names = [...new Set(parseRoles(elements.textInput.value).map((turn) => turn.role))];
   document.querySelector("#rolesCount").textContent = `${names.length} ${pluralize(names.length, ["роль", "роли", "ролей"])}`;
+  const hasMarkers = elements.textInput.value.split(/\r?\n/).some((line) => matchRoleLine(line));
+  document.querySelector("#rolesExplanation").textContent = !names.length
+    ? "Вставь текст с метками (Анна) и (Иван) — здесь появится выбор голоса для каждого участника."
+    : !hasMarkers
+      ? "Метки участников не найдены: пока весь текст читает Рассказчик. Добавь перед репликами (Анна), (Иван) или подготовь текст с помощью запроса в попапе."
+      : "Для каждого участника — своё имя и голос с поиском. Имена и метки не произносятся. Запуск — кнопкой «Слушать».";
   let assigned = false;
   for (const name of names) {
     if (!state.roleVoices[name]) {
@@ -2235,6 +2247,20 @@ function renderRoleChoices() {
     field.className = "field voice-field";
     const label = document.createElement("span");
     label.textContent = name;
+    const nameInput = document.createElement("input");
+    nameInput.className = "role-name-input";
+    nameInput.type = "text";
+    nameInput.value = state.roleNames[name] || name;
+    nameInput.maxLength = 80;
+    nameInput.disabled = state.childLocked;
+    nameInput.setAttribute("aria-label", `Имя участника: ${name}`);
+    nameInput.addEventListener("change", () => {
+      state.roleNames[name] = nameInput.value.trim() || name;
+      nameInput.value = state.roleNames[name];
+      storage.set("roleNames", JSON.stringify(state.roleNames));
+      button.setAttribute("aria-label", `Выбрать голос: ${state.roleNames[name]}`);
+      renderTextPreview(elements.textInput.value);
+    });
     const button = document.createElement("button");
     button.type = "button";
     button.className = "voice-picker-button role-voice-button";
@@ -2242,7 +2268,7 @@ function renderRoleChoices() {
     button.disabled = state.childLocked;
     button.setAttribute("aria-expanded", "false");
     button.setAttribute("aria-controls", "voicePickerPanel");
-    button.setAttribute("aria-label", `Выбрать голос: ${name}`);
+    button.setAttribute("aria-label", `Выбрать голос: ${state.roleNames[name] || name}`);
     const copy = document.createElement("span");
     const title = document.createElement("strong");
     title.textContent = voice?.name || "Выбрать голос";
@@ -2257,7 +2283,7 @@ function renderRoleChoices() {
       if (!elements.voicePickerPanel.hidden && state.voicePickerRole === name) closeVoicePicker();
       else openVoicePicker(name, button);
     });
-    field.append(label, button);
+    field.append(label, nameInput, button);
     container.append(field);
   }
   if (assigned) storage.set("roleVoices", JSON.stringify(state.roleVoices));
@@ -2283,6 +2309,7 @@ document.querySelector("#rolesCopy").addEventListener("click", async () => {
 });
 function setRoleMode(enabled) {
   if (state.childLocked) return;
+  closeVoicePicker();
   stopSpeech(enabled ? "Чтение по ролям включено" : "Обычное чтение", false);
   state.roleMode = enabled;
   storage.set("roleMode", String(enabled));
@@ -2295,6 +2322,7 @@ function setRoleMode(enabled) {
 }
 
 document.querySelector("#rolesToggle").addEventListener("change", (event) => setRoleMode(event.target.checked));
+document.querySelector("#rolesSettingsToggle").addEventListener("change", (event) => setRoleMode(event.target.checked));
 document.querySelector("#rolesDisable").addEventListener("click", () => setRoleMode(false));
 
 initialize()

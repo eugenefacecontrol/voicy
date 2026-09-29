@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=20" />
+    <link rel="stylesheet" href="styles.css?v=21" />
   </head>
   <body>
     <main class="shell">
@@ -222,6 +222,19 @@
           <h2 id="settings-title">Как это прозвучит?</h2>
         </div>
 
+        <label class="roles-toggle" for="rolesSettingsToggle">
+          <span>Читать по ролям</span>
+          <input id="rolesSettingsToggle" type="checkbox" role="switch" />
+        </label>
+        <section id="rolesSettings" class="roles-settings" aria-labelledby="rolesCount" hidden>
+          <div class="roles-heading">
+            <h3 id="rolesCount">Голоса ролей</h3>
+            <button class="text-button" id="rolesDisable" type="button">Обычное чтение</button>
+          </div>
+          <p id="rolesExplanation">Для каждого участника — своё имя и голос с поиском. Имена не произносятся.</p>
+          <div id="rolesVoices" class="roles-voices"></div>
+        </section>
+
         <div class="setting-grid">
           <div class="field voice-field">
             <span>Голос</span>
@@ -296,15 +309,6 @@
           </label>
         </div>
 
-        <section id="rolesSettings" class="roles-settings" aria-labelledby="rolesCount" hidden>
-          <div class="roles-heading">
-            <h3 id="rolesCount">Голоса ролей</h3>
-            <button class="text-button" id="rolesDisable" type="button">Обычное чтение</button>
-          </div>
-          <p>Для каждой роли можно выбрать свой голос. Запуск — обычной кнопкой «Слушать».</p>
-          <div id="rolesVoices" class="roles-voices"></div>
-        </section>
-
         <fieldset class="speed-field">
           <legend>Скорость</legend>
           <div class="speed-slider-row">
@@ -366,6 +370,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=20"></script>
+    <script src="app.js?v=21"></script>
   </body>
 </html>

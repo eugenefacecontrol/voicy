@@ -1614,3 +1614,6 @@ body {
 .roles-toggle input:checked { background: var(--accent, #ff5b2b); }
 .roles-toggle input:checked::before { transform: translateX(22px); }
 .roles-toggle input:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+
+.role-name-input { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: inherit; font: inherit; font-size: 16px; }
+.voice-field[hidden] { display: none; }
