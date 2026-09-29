@@ -146,6 +146,8 @@ function languageLabel(code = "") {
 
 const state = {
   roleMode: false,
+  voicePickerRole: null,
+  voicePickerTrigger: null,
   roleVoices: Object.create(null),
   voices: [],
   voiceChoices: [],
@@ -899,7 +901,12 @@ function closeVoicePicker() {
   elements.voicePickerPanel.hidden = true;
   elements.voicePickerButton.setAttribute("aria-expanded", "false");
   unlockVoicePickerPage();
-  if (hadFocus) elements.voicePickerButton.focus({ preventScroll: true });
+  const trigger = state.voicePickerTrigger || elements.voicePickerButton;
+  trigger.setAttribute("aria-expanded", "false");
+  if (hadFocus) trigger.focus({ preventScroll: true });
+  elements.voicePickerButton.closest(".voice-field").append(elements.voicePickerPanel);
+  state.voicePickerRole = null;
+  state.voicePickerTrigger = null;
 }
 
 function childLockDigest(pin, salt) {
@@ -957,6 +964,7 @@ function applyChildLock(locked) {
   elements.voicePickerButton.disabled = state.childLocked;
   elements.fontSelect.disabled = state.childLocked;
   elements.speedSlider.disabled = state.childLocked;
+  renderRoleChoices();
   elements.settings.setAttribute("aria-disabled", String(state.childLocked));
   updateFloatingSettingsButton();
 }
@@ -1009,12 +1017,18 @@ function keepPinNumeric(event) {
   event.target.value = event.target.value.replace(/\D/g, "").slice(0, 4);
 }
 
-function openVoicePicker() {
-  const selectedProvider = state.selectedVoice?.provider || "system";
+function openVoicePicker(role = null, trigger = elements.voicePickerButton) {
+  if (state.childLocked) return;
+  closeVoicePicker();
+  state.voicePickerRole = role;
+  state.voicePickerTrigger = trigger;
+  trigger.closest(".voice-field").append(elements.voicePickerPanel);
+  document.querySelector("#voicePickerTitle").textContent = role ? `Голос · ${role}` : "Выбрать голос";
+  const selectedProvider = (role ? state.roleVoices[role] : state.selectedVoice)?.provider || "system";
   setVoiceGroupExpanded(selectedProvider, true);
-  renderVoiceChoices();
   elements.voicePickerPanel.hidden = false;
-  elements.voicePickerButton.setAttribute("aria-expanded", "true");
+  renderVoiceChoices();
+  trigger.setAttribute("aria-expanded", "true");
   syncVoicePickerViewport();
   elements.voiceSearch.focus({ preventScroll: true });
 }
@@ -1042,7 +1056,7 @@ function setVoiceGroupExpanded(provider, expanded, persist = true) {
 }
 
 function renderVoiceChoices(filter = elements.voiceSearch.value) {
-  if (document.querySelector("#rolesDialog").open) renderRoleChoices();
+  if (elements.voicePickerPanel.hidden) renderRoleChoices();
   const query = filter.trim().toLocaleLowerCase("ru");
   const choices = state.voiceChoices.filter((voice) => (
     !query || `${voice.name} ${voice.meta} ${voice.provider}`.toLocaleLowerCase("ru").includes(query)
@@ -1078,7 +1092,7 @@ function renderVoiceChoices(filter = elements.voiceSearch.value) {
       button.className = "voice-option";
       button.dataset.voiceKey = voice.key;
       button.setAttribute("role", "option");
-      button.setAttribute("aria-selected", String(voice.key === state.selectedVoiceKey));
+      button.setAttribute("aria-selected", String(voice.key === (state.voicePickerRole ? state.roleVoices[state.voicePickerRole]?.key : state.selectedVoiceKey)));
       name.textContent = voice.name;
       meta.textContent = voice.meta;
       badge.className = "voice-badge";
@@ -1115,6 +1129,7 @@ function selectVoiceChoice(voice, restart = true) {
   setVoiceGroupExpanded(voice.provider, true);
   renderVoiceChoices();
   closeVoicePicker();
+  renderRoleChoices();
   if (restart && state.speaking) startSpeech(state.currentWord);
 }
 
@@ -1159,10 +1174,10 @@ async function loadFishVoices(query = "") {
       lang: (voice.languages || []).map(languageLabel).join(", "),
       meta: `${(voice.languages || []).map(languageLabel).join(", ") || "мультиязычный"} · модель сообщества · ${voice.author}`,
     }));
-    const preservedFish = state.selectedVoice?.provider === "fish"
-      && !fishChoices.some((voice) => voice.key === state.selectedVoiceKey)
-      ? [state.selectedVoice]
-      : [];
+    const preservedFish = [state.selectedVoice, ...Object.values(state.roleVoices)]
+      .filter((voice, index, all) => voice?.provider === "fish"
+        && !fishChoices.some((entry) => entry.key === voice.key)
+        && all.findIndex((entry) => entry?.key === voice.key) === index);
     state.voiceChoices = [
       ...state.voiceChoices.filter((voice) => voice.provider !== "fish"),
       ...preservedFish,
@@ -1233,6 +1248,15 @@ async function loadGeminiStatus() {
 
 function updateTextMeta() {
   const text = elements.textInput.value;
+  if (text !== lastRolesText) {
+    const detected = /^\s*\([^()\n]+\)[ \t]*:?/mu.test(text);
+    if (detected !== state.roleMode) resetSavedPosition();
+    state.roleMode = detected;
+    lastRolesText = text;
+    storage.set("roleMode", String(state.roleMode));
+    syncRolesButton();
+  }
+  renderRoleChoices();
   const plan = createQueue(text);
   const sections = plan.sections.length;
   const words = plan.totalWords;
@@ -1779,7 +1803,11 @@ function startCloudSpeech(startWord = 0) {
 function startSpeech(startWord = 0) {
   if (state.roleMode && !rolesReady()) {
     updatePlayer("idle", "Выбери доступный голос для каждой роли");
-    if (!state.childLocked) openRolesDialog();
+    if (!state.childLocked) {
+      document.querySelector("#rolesSettings").scrollIntoView({ behavior: "smooth", block: "center" });
+      const missing = [...document.querySelectorAll(".role-voice-button")].find((button) => !roleVoiceAvailable(state.roleVoices[button.dataset.role]));
+      if (missing) openVoicePicker(missing.dataset.role, missing);
+    }
     return;
   }
   if (state.roleMode || isCloudVoice()) startCloudSpeech(startWord);
@@ -1921,6 +1949,7 @@ async function initialize() {
 
   state.roleMode = sharedText === null && storage.get("roleMode") === "true";
   try { state.roleVoices = Object.assign(Object.create(null), JSON.parse(storage.get("roleVoices", "{}"))); } catch {}
+  lastRolesText = sharedText === null ? storage.get("text") : null;
   syncRolesButton();
   restoreStoredCloudVoice();
   elements.textInput.value = sharedText ?? storage.get("text");
@@ -2005,7 +2034,18 @@ elements.voiceGroups.addEventListener("click", (event) => {
   }
   const button = event.target.closest(".voice-option");
   if (!button) return;
-  selectVoiceChoice(state.voiceChoices.find((voice) => voice.key === button.dataset.voiceKey));
+  const voice = state.voiceChoices.find((voice) => voice.key === button.dataset.voiceKey);
+  if (state.voicePickerRole && voice) {
+    state.roleVoices[state.voicePickerRole] = voice;
+    storage.set("roleVoices", JSON.stringify(state.roleVoices));
+    const resumeAt = state.currentWord;
+    const wasSpeaking = state.speaking;
+    closeVoicePicker();
+    renderRoleChoices();
+    if (wasSpeaking) startSpeech(resumeAt);
+  } else {
+    selectVoiceChoice(voice);
+  }
 });
 elements.voiceSearch.addEventListener("input", () => {
   renderVoiceChoices();
@@ -2104,7 +2144,8 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !elements.voicePickerPanel.hidden) closeVoicePicker();
 });
 document.addEventListener("click", (event) => {
-  if (!elements.voicePickerPanel.hidden && !event.target.closest(".voice-field")) closeVoicePicker();
+  if (!elements.voicePickerPanel.hidden && !event.target.closest(".voice-field")
+    && !(state.voicePickerRole && event.target.closest("#playButton"))) closeVoicePicker();
 });
 elements.fontSelect.addEventListener("change", () => selectFont(elements.fontSelect.value));
 elements.speedSlider.addEventListener("input", handleSpeedInput);
@@ -2157,9 +2198,8 @@ function rolesReady(text = elements.textInput.value, voices = state.roleVoices) 
   return turns.length > 0 && turns.every((turn) => roleVoiceAvailable(voices[turn.role]));
 }
 
-let draftRoleVoices = Object.create(null);
+let lastRolesText = null;
 const rolesDialog = document.querySelector("#rolesDialog");
-const rolesText = document.querySelector("#rolesText");
 const rolesPrompt = document.querySelector("#rolesPrompt");
 rolesPrompt.value = `Подготовь следующий текст для озвучивания по ролям. Сохрани исходные реплики, их порядок и язык. Каждую реплику начинай с новой строки с меткой (Человек 1), (Человек 2) и так далее; если имена известны, используй (Анна), (Иван). Для одного участника всегда используй одну и ту же метку. Авторский текст помечай (Рассказчик). Не добавляй Markdown, пояснения или список участников. Пример:
 (Человек 1) Привет!
@@ -2176,80 +2216,76 @@ function syncRolesButton() {
 }
 
 function renderRoleChoices() {
-  const turns = parseRoles(rolesText.value);
-  const names = [...new Set(turns.map((turn) => turn.role))];
-  document.querySelector("#rolesCount").textContent = `${names.length} ${pluralize(names.length, ["роль", "роли", "ролей"])} · ${turns.length} ${pluralize(turns.length, ["реплика", "реплики", "реплик"])}`;
+  if (!elements.voicePickerPanel.hidden) return;
   const container = document.querySelector("#rolesVoices");
+  document.querySelector("#rolesSettings").hidden = !state.roleMode;
+  document.querySelector("#rolesDisable").disabled = state.childLocked;
   container.replaceChildren();
+  if (!state.roleMode) return;
+  const names = [...new Set(parseRoles(elements.textInput.value).map((turn) => turn.role))];
+  document.querySelector("#rolesCount").textContent = `${names.length} ${pluralize(names.length, ["роль", "роли", "ролей"])}`;
+  let assigned = false;
   for (const name of names) {
-    const label = document.createElement("label");
-    label.className = "field";
-    const title = document.createElement("span");
-    title.textContent = name;
-    const select = document.createElement("select");
-    select.append(new Option("Выбери голос…", ""));
-    const saved = draftRoleVoices[name];
-    const choices = [...state.voiceChoices];
-    if (saved && !choices.some((voice) => voice.key === saved.key)) choices.push(saved);
-    for (const [provider, heading] of [["system", "Голоса устройства"], ["gemini", "Gemini"], ["fish", "Fish Audio"]]) {
-      const group = document.createElement("optgroup");
-      group.label = heading;
-      choices.filter((voice) => voice.provider === provider && roleVoiceAvailable(voice)).forEach((voice) => {
-        group.append(new Option(`${voice.name}${voice.lang ? ` · ${voice.lang}` : ""}`, voice.key));
-      });
-      if (group.children.length) select.append(group);
+    if (!state.roleVoices[name]) {
+      const fallback = roleVoiceAvailable(state.selectedVoice) ? state.selectedVoice : state.voiceChoices.find(roleVoiceAvailable);
+      if (fallback) { state.roleVoices[name] = fallback; assigned = true; }
     }
-    select.value = saved?.key || "";
-    select.addEventListener("change", () => {
-      draftRoleVoices[name] = choices.find((voice) => voice.key === select.value);
-      document.querySelector("#rolesStart").disabled = !rolesReady(rolesText.value, draftRoleVoices);
+    const voice = state.roleVoices[name];
+    const field = document.createElement("div");
+    field.className = "field voice-field";
+    const label = document.createElement("span");
+    label.textContent = name;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "voice-picker-button role-voice-button";
+    button.dataset.role = name;
+    button.disabled = state.childLocked;
+    button.setAttribute("aria-expanded", "false");
+    button.setAttribute("aria-controls", "voicePickerPanel");
+    button.setAttribute("aria-label", `Выбрать голос: ${name}`);
+    const copy = document.createElement("span");
+    const title = document.createElement("strong");
+    title.textContent = voice?.name || "Выбрать голос";
+    const meta = document.createElement("small");
+    meta.textContent = voice && !roleVoiceAvailable(voice) ? "Голос недоступен — выбери другой" : (voice?.meta || "Поиск по имени и языку");
+    copy.append(title, meta);
+    const arrow = document.createElement("span");
+    arrow.textContent = "↓";
+    arrow.setAttribute("aria-hidden", "true");
+    button.append(copy, arrow);
+    button.addEventListener("click", () => {
+      if (!elements.voicePickerPanel.hidden && state.voicePickerRole === name) closeVoicePicker();
+      else openVoicePicker(name, button);
     });
-    label.append(title, select);
-    container.append(label);
+    field.append(label, button);
+    container.append(field);
   }
-  document.querySelector("#rolesStart").disabled = !rolesReady(rolesText.value, draftRoleVoices);
+  if (assigned) storage.set("roleVoices", JSON.stringify(state.roleVoices));
 }
 
 function openRolesDialog() {
   if (state.childLocked) return;
-  rolesText.value = elements.textInput.value;
-  draftRoleVoices = Object.assign(Object.create(null), state.roleVoices);
-  document.querySelector("#rolesStatus").textContent = "Выбери голос отдельно для каждой роли. После запуска весь диалог читается по порядку.";
-  renderRoleChoices();
+  closeVoicePicker();
+  document.querySelector("#rolesStatus").textContent = "";
   if (!rolesDialog.open) rolesDialog.showModal();
 }
 
 document.querySelector("#rolesButton").addEventListener("click", openRolesDialog);
 document.querySelector("#rolesClose").addEventListener("click", () => rolesDialog.close());
-rolesText.addEventListener("input", renderRoleChoices);
 document.querySelector("#rolesCopy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(rolesPrompt.value);
     document.querySelector("#rolesStatus").textContent = "Запрос скопирован — вставь его в свой ИИ-чат вместе с исходным текстом.";
   } catch {
-    rolesPrompt.closest("details").open = true;
     rolesPrompt.select();
     document.querySelector("#rolesStatus").textContent = "Скопируй выделенный запрос: Ctrl+C или ⌘C.";
   }
-});
-document.querySelector("#rolesStart").addEventListener("click", () => {
-  if (state.childLocked || !rolesReady(rolesText.value, draftRoleVoices)) return;
-  stopSpeech("Готов к чтению по ролям", false);
-  state.roleMode = true;
-  state.roleVoices = Object.assign(Object.create(null), draftRoleVoices);
-  elements.textInput.value = rolesText.value;
-  storage.set("roleMode", "true");
-  storage.set("roleVoices", JSON.stringify(state.roleVoices));
-  syncRolesButton();
-  updateTextMeta();
-  setReadMode(true);
-  rolesDialog.close();
-  startSpeech(0);
 });
 document.querySelector("#rolesDisable").addEventListener("click", () => {
   if (state.childLocked) return;
   stopSpeech("Обычное чтение", false);
   state.roleMode = false;
+  lastRolesText = elements.textInput.value;
   storage.set("roleMode", "false");
   syncRolesButton();
   updateTextMeta();

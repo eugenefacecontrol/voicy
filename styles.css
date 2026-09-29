@@ -1598,6 +1598,12 @@ body {
 .roles-dialog details { margin-bottom: 20px; }
 .roles-dialog summary { cursor: pointer; }
 .roles-voices { display: grid; gap: 16px; }
-.roles-voices select { width: 100%; min-height: 44px; }
-.roles-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
 .preview-role { display: block; font: 600 0.8em system-ui, sans-serif; margin-bottom: 8px; opacity: 0.65; }
+
+.roles-settings { margin: 24px 0; padding-top: 20px; border-top: 1px solid var(--line); }
+.roles-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.roles-heading h3 { margin: 0; }
+.roles-settings > p { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+.roles-voices { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.roles-voices .voice-field { min-width: 0; }
+.roles-voices .voice-picker-button { min-width: 0; }

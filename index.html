@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=18" />
+    <link rel="stylesheet" href="styles.css?v=19" />
   </head>
   <body>
     <main class="shell">
@@ -96,20 +96,10 @@
           <div><p class="step">Озвучка диалога</p><h2 id="rolesTitle">Читать по ролям</h2></div>
           <button class="sections-close" id="rolesClose" type="button" aria-label="Закрыть">×</button>
         </div>
-        <p>Каждая реплика начинается с новой строки: <strong>(Человек 1) Текст реплики.</strong> Можно использовать имена. Повторяй одно и то же имя для одного участника. Текст без метки получит роль «Рассказчик».</p>
-        <details><summary>Запрос для подготовки текста</summary>
-          <textarea id="rolesPrompt" rows="6" readonly aria-label="Запрос для подготовки текста"></textarea>
-          <button class="mode-button" id="rolesCopy" type="button">Копировать запрос</button>
-        </details>
-        <label for="rolesText">Вставь весь текст диалога</label>
-        <textarea id="rolesText" rows="7" placeholder="(Человек 1) Привет!&#10;(Человек 2) Привет, как дела?&#10;(Человек 1) Хорошо!"></textarea>
-        <p id="rolesCount" aria-live="polite"></p>
-        <div id="rolesVoices" class="roles-voices"></div>
+        <p>Скопируй запрос в свой ИИ-чат, добавь исходный текст. Результат вставь в обычное поле Voicy — роли появятся на странице автоматически.</p>
+        <textarea id="rolesPrompt" rows="9" readonly aria-label="Запрос для подготовки текста"></textarea>
+        <button class="mode-button" id="rolesCopy" type="button">Копировать запрос</button>
         <p id="rolesStatus" aria-live="polite"></p>
-        <div class="roles-actions">
-          <button class="mode-button" id="rolesDisable" type="button">Обычное чтение</button>
-          <button class="pin-submit" id="rolesStart" type="button">Слушать весь диалог</button>
-        </div>
       </dialog>
 
       <div class="share-backdrop" id="childLockBackdrop" hidden></div>
@@ -301,6 +291,15 @@
           </label>
         </div>
 
+        <section id="rolesSettings" class="roles-settings" aria-labelledby="rolesCount" hidden>
+          <div class="roles-heading">
+            <h3 id="rolesCount">Голоса ролей</h3>
+            <button class="text-button" id="rolesDisable" type="button">Обычное чтение</button>
+          </div>
+          <p>Для каждой роли можно выбрать свой голос. Запуск — обычной кнопкой «Слушать».</p>
+          <div id="rolesVoices" class="roles-voices"></div>
+        </section>
+
         <fieldset class="speed-field">
           <legend>Скорость</legend>
           <div class="speed-slider-row">
@@ -362,6 +361,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=18"></script>
+    <script src="app.js?v=19"></script>
   </body>
 </html>
