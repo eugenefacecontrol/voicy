@@ -145,6 +145,8 @@ function languageLabel(code = "") {
 }
 
 const state = {
+  roleMode: false,
+  roleVoices: Object.create(null),
   voices: [],
   voiceChoices: [],
   selectedVoiceKey: "",
@@ -152,6 +154,7 @@ const state = {
   fishAvailable: false,
   geminiAvailable: false,
   fishAudio: null,
+  cloudLoading: false,
   fishAudioCache: new Map(),
   fishControllers: new Set(),
   fishObjectUrl: "",
@@ -218,6 +221,7 @@ function cloudProviderLabel(voice = state.selectedVoice) {
 }
 
 function getSections(text) {
+  if (state.roleMode) return parseRoles(text).map((turn) => turn.text.replace(/\s+/g, " "));
   return text
     .trim()
     .split(/\n\s*\n+/)
@@ -226,6 +230,7 @@ function getSections(text) {
 }
 
 function getDisplaySections(text) {
+  if (state.roleMode) return parseRoles(text).map((turn) => turn.text);
   return text
     .trim()
     .split(/\n\s*\n+/)
@@ -494,6 +499,7 @@ function splitMixedLanguageParts(text) {
 }
 
 function createQueue(text) {
+  const turns = state.roleMode ? parseRoles(text) : [];
   const sections = getSections(text);
   let wordCursor = 0;
   const sectionData = [];
@@ -511,6 +517,7 @@ function createQueue(text) {
       const item = {
         text: part.text,
         language: part.language,
+        role: turns[sectionIndex]?.role || null,
         sectionIndex,
         sectionTotal: sections.length,
         startWord: wordCursor,
@@ -530,6 +537,7 @@ function createQueue(text) {
 }
 
 function createCloudQueue(text) {
+  const turns = state.roleMode ? parseRoles(text) : [];
   const sections = getSections(text);
   let wordCursor = 0;
   const queue = [];
@@ -564,6 +572,7 @@ function createCloudQueue(text) {
       queue.push({
         text: part.text,
         language: part.language,
+        role: turns[sectionIndex]?.role || null,
         sectionIndex,
         sectionTotal: sections.length,
         startWord: wordCursor,
@@ -632,6 +641,7 @@ function closeSections() {
 
 function renderTextPreview(text, plan = createQueue(text)) {
   const sections = getDisplaySections(text);
+  const turns = state.roleMode ? parseRoles(text) : [];
   elements.textPreview.innerHTML = "";
 
   if (!sections.length) {
@@ -660,6 +670,12 @@ function renderTextPreview(text, plan = createQueue(text)) {
     playButton.dataset.startWord = String(sectionData?.startWord || 0);
     playButton.setAttribute("aria-label", `Озвучить раздел ${index + 1} с начала`);
     playButton.textContent = "▶ Озвучить раздел";
+    if (state.roleMode) {
+      const roleLabel = document.createElement("strong");
+      roleLabel.className = "preview-role";
+      roleLabel.textContent = turns[index]?.role;
+      paragraph.append(roleLabel);
+    }
     paragraph.append(copy, playButton);
     elements.textPreview.append(paragraph);
   });
@@ -930,6 +946,8 @@ function applyChildLock(locked) {
     closeExportDialog();
   }
 
+  document.querySelector("#rolesButton").disabled = state.childLocked;
+  if (state.childLocked) document.querySelector("#rolesDialog").close();
   elements.textInput.readOnly = state.childLocked;
   elements.viewModeButton.disabled = state.childLocked;
   elements.pasteButton.disabled = state.childLocked;
@@ -1024,6 +1042,7 @@ function setVoiceGroupExpanded(provider, expanded, persist = true) {
 }
 
 function renderVoiceChoices(filter = elements.voiceSearch.value) {
+  if (document.querySelector("#rolesDialog").open) renderRoleChoices();
   const query = filter.trim().toLocaleLowerCase("ru");
   const choices = state.voiceChoices.filter((voice) => (
     !query || `${voice.name} ${voice.meta} ${voice.provider}`.toLocaleLowerCase("ru").includes(query)
@@ -1273,6 +1292,7 @@ function stopSpeech(message = "Остановлено", preservePosition = true)
   state.fishObjectUrl = "";
   state.speaking = false;
   state.paused = false;
+  state.cloudLoading = false;
   state.queue = [];
   state.queueIndex = 0;
   state.currentWord = state.resumeWord;
@@ -1296,12 +1316,13 @@ function speakCurrent(session) {
   }
 
   const item = state.queue[state.queueIndex];
+  if (isCloudVoice(voiceForItem(item))) return speakCurrentCloud(session);
   const itemWords = item.text.match(/\S+/g) || [];
   const relativeStart = state.seekWord === null ? 0 : Math.max(0, state.seekWord - item.startWord);
   const spokenText = relativeStart ? itemWords.slice(relativeStart).join(" ") : item.text;
   const utterance = new SpeechSynthesisUtterance(spokenText);
-  const selectedVoice = state.voices.find((voice) => voice.voiceURI === state.selectedVoice?.id);
-  const englishVoice = item.language === "en"
+  const selectedVoice = state.voices.find((voice) => voice.voiceURI === voiceForItem(item)?.id);
+  const englishVoice = !state.roleMode && item.language === "en"
     ? state.voices.find((voice) => voice.lang?.toLowerCase().startsWith("en"))
     : null;
   const spokenVoice = englishVoice || selectedVoice;
@@ -1388,11 +1409,12 @@ async function speakCurrentCloud(session) {
     state.paused = false;
     resetSavedPosition();
     elements.progressBar.style.width = "100%";
-    updatePlayer("idle", `Готово — весь текст прочитан через ${cloudProviderLabel()}`);
+    updatePlayer("idle", `Готово — весь текст прочитан через ${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))}`);
     return;
   }
 
   const item = state.queue[state.queueIndex];
+  if (!isCloudVoice(voiceForItem(item))) return speakCurrent(session);
   const itemWords = item.text.match(/\S+/g) || [];
   const relativeStart = state.seekWord === null ? 0 : Math.max(0, state.seekWord - item.startWord);
   const spokenText = relativeStart ? itemWords.slice(relativeStart).join(" ") : item.text;
@@ -1403,11 +1425,13 @@ async function speakCurrentCloud(session) {
   setProgress(state.currentWord);
   highlightSection(item.sectionIndex, false);
   highlightCurrentWord(state.currentWord, state.readMode);
-  updatePlayer("playing", `${cloudProviderLabel()} готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
+  updatePlayer("playing", `${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))} готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
 
   try {
-    const blob = await getCloudAudioBlob(spokenText);
+    state.cloudLoading = true;
+    const blob = await getCloudAudioBlob(spokenText, voiceForItem(item));
     if (session !== state.session) return;
+    state.cloudLoading = false;
     if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
     state.fishObjectUrl = URL.createObjectURL(blob);
     const audio = state.fishAudio || new Audio();
@@ -1435,7 +1459,7 @@ async function speakCurrentCloud(session) {
       savePosition(state.currentWord, true);
       state.queueIndex += 1;
       setProgress(state.currentWord);
-      speakCurrentCloud(session);
+      speakCurrent(session);
     };
     audio.onerror = () => {
       if (session === state.session) stopSpeech("Не удалось воспроизвести аудио");
@@ -1443,8 +1467,12 @@ async function speakCurrentCloud(session) {
 
     updatePlayer(
       "playing",
-      `${cloudProviderLabel()} · раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
+      `${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))} · раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
     );
+    if (state.paused) {
+      updatePlayer("paused", "Аудио готово — нажми «Продолжить»");
+      return;
+    }
     try {
       await audio.play();
     } catch {
@@ -1506,8 +1534,7 @@ function trimFishAudioCache() {
   }
 }
 
-function getCloudAudioBlob(text) {
-  const voice = state.selectedVoice;
+function getCloudAudioBlob(text, voice = state.selectedVoice) {
   const key = `${voice.key}:${text}`;
   if (state.fishAudioCache.has(key)) return state.fishAudioCache.get(key);
 
@@ -1530,7 +1557,7 @@ function getCloudAudioBlob(text) {
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      throw new Error(result.error || `${cloudProviderLabel()} не сгенерировал аудио`);
+      throw new Error(result.error || `${cloudProviderLabel(voice)} не сгенерировал аудио`);
     }
     const blob = await response.blob();
     persistCloudAudio(text, voice, blob);
@@ -1559,7 +1586,9 @@ function openExportDialog() {
   const plan = createQueue(text);
   const sectionIndex = getCurrentSectionIndex(plan);
   const estimatedMinutes = plan.totalWords / 150;
-  const cloudSelected = isCloudVoice();
+  const cloudSelected = state.roleMode
+    ? createQueue(text).queue.every((item) => isCloudVoice(voiceForItem(item))) && rolesReady()
+    : isCloudVoice();
 
   elements.exportSectionHint.textContent = sectionIndex >= 0
     ? `Раздел ${sectionIndex + 1} · ${cloudSelected && state.selectedVoice.provider === "gemini" ? "WAV" : "MP3 или WAV"}`
@@ -1640,8 +1669,8 @@ async function exportFishItems(items, filenameBase) {
   try {
     if (items.length === 1) {
       elements.exportStatus.textContent = "Готовлю аудиофайл…";
-      const blob = await getCloudAudioBlob(items[0].text);
-      const extension = state.selectedVoice.provider === "gemini" ? "wav" : "mp3";
+      const blob = await getCloudAudioBlob(items[0].text, voiceForItem(items[0]));
+      const extension = voiceForItem(items[0]).provider === "gemini" ? "wav" : "mp3";
       downloadAudioBlob(blob, `${filenameBase}.${extension}`);
     } else {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -1654,7 +1683,7 @@ async function exportFishItems(items, filenameBase) {
 
       for (let index = 0; index < items.length; index += 1) {
         elements.exportStatus.textContent = `Готовлю фрагмент ${index + 1} из ${items.length}…`;
-        const blob = await getCloudAudioBlob(items[index].text);
+        const blob = await getCloudAudioBlob(items[index].text, voiceForItem(items[index]));
         const decoded = await audioContext.decodeAudioData(await blob.arrayBuffer());
         const pcm = pcmBytesFromAudioBuffer(decoded, sampleRate);
         pcmParts.push(pcm);
@@ -1679,7 +1708,9 @@ async function exportFishItems(items, filenameBase) {
     elements.exportClose.disabled = false;
     const text = elements.textInput.value.trim();
     const plan = createQueue(text);
-    const cloudSelected = isCloudVoice();
+    const cloudSelected = state.roleMode
+    ? createQueue(text).queue.every((item) => isCloudVoice(voiceForItem(item))) && rolesReady()
+    : isCloudVoice();
     elements.exportSectionButton.disabled = !text || !cloudSelected || getCurrentSectionIndex(plan) < 0;
     elements.exportAllButton.disabled = !text || !cloudSelected || (plan.totalWords / 150) > maxFullExportMinutes;
   }
@@ -1698,11 +1729,12 @@ function exportAllSections() {
 }
 
 function prefetchCloudChunks(currentIndex, session) {
-  if (session !== state.session || !isCloudVoice()) return;
+  if (session !== state.session) return;
   for (let offset = 1; offset <= fishPrefetchAhead; offset += 1) {
     const nextItem = state.queue[currentIndex + offset];
     if (!nextItem) break;
-    getCloudAudioBlob(nextItem.text).catch(() => {
+    if (!isCloudVoice(voiceForItem(nextItem))) continue;
+    getCloudAudioBlob(nextItem.text, voiceForItem(nextItem)).catch(() => {
       // The regular playback path will retry and show a useful error if needed.
     });
   }
@@ -1730,7 +1762,7 @@ function startCloudSpeech(startWord = 0) {
   }
   if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
   state.fishObjectUrl = "";
-  const plan = createCloudQueue(text);
+  const plan = state.roleMode ? createQueue(text) : createCloudQueue(text);
   const safeWord = Math.max(0, Math.min(startWord, Math.max(0, plan.totalWords - 1)));
   state.queue = plan.queue;
   state.totalWords = plan.totalWords;
@@ -1741,11 +1773,16 @@ function startCloudSpeech(startWord = 0) {
   state.paused = false;
   savePosition(safeWord, true);
   setProgress(safeWord);
-  speakCurrentCloud(state.session);
+  speakCurrent(state.session);
 }
 
 function startSpeech(startWord = 0) {
-  if (isCloudVoice()) startCloudSpeech(startWord);
+  if (state.roleMode && !rolesReady()) {
+    updatePlayer("idle", "Выбери доступный голос для каждой роли");
+    if (!state.childLocked) openRolesDialog();
+    return;
+  }
+  if (state.roleMode || isCloudVoice()) startCloudSpeech(startWord);
   else startSystemSpeech(startWord);
 }
 
@@ -1778,7 +1815,12 @@ async function handlePlay() {
   if (!state.speaking) {
     startSpeech(state.resumeWord);
   } else if (state.paused) {
-    if (isCloudVoice() && state.fishAudio) {
+    if (state.cloudLoading) {
+      state.paused = false;
+      updatePlayer("playing", "Подготавливаю выбранный фрагмент…");
+      return;
+    }
+    if (isCloudVoice(voiceForItem(state.queue[state.queueIndex])) && state.fishAudio) {
       try {
         await state.fishAudio.play();
       } catch {
@@ -1791,7 +1833,7 @@ async function handlePlay() {
     state.paused = false;
     updatePlayer("playing", elements.statusText.textContent);
   } else {
-    if (isCloudVoice()) state.fishAudio?.pause();
+    if (isCloudVoice(voiceForItem(state.queue[state.queueIndex]))) state.fishAudio?.pause();
     else synth.pause();
     state.paused = true;
     updatePlayer("paused", "Воспроизведение на паузе");
@@ -1837,7 +1879,7 @@ function selectRate(rate, refresh = true, restartSystem = true) {
   storage.set("rate", String(normalizedRate));
   if (refresh) updateTextMeta();
   if (state.speaking) {
-    if (isCloudVoice() && state.fishAudio) state.fishAudio.playbackRate = normalizedRate;
+    if (isCloudVoice(voiceForItem(state.queue[state.queueIndex])) && state.fishAudio) state.fishAudio.playbackRate = normalizedRate;
     else if (restartSystem) startSpeech(state.currentWord);
   }
 }
@@ -1853,7 +1895,7 @@ function handleSpeedInput(event) {
 
 function commitSpeedChange() {
   updateTextMeta();
-  if (state.speaking && !isCloudVoice()) startSpeech(state.currentWord);
+  if (state.speaking && !isCloudVoice(voiceForItem(state.queue[state.queueIndex]))) startSpeech(state.currentWord);
 }
 
 function selectFont(font) {
@@ -1877,6 +1919,9 @@ async function initialize() {
     }
   }
 
+  state.roleMode = sharedText === null && storage.get("roleMode") === "true";
+  try { state.roleVoices = Object.assign(Object.create(null), JSON.parse(storage.get("roleVoices", "{}"))); } catch {}
+  syncRolesButton();
   restoreStoredCloudVoice();
   elements.textInput.value = sharedText ?? storage.get("text");
   if (sharedText !== null) {
@@ -2072,6 +2117,144 @@ window.addEventListener("beforeunload", () => {
 });
 window.addEventListener("scroll", updateFloatingSettingsButton, { passive: true });
 window.addEventListener("resize", updateFloatingSettingsButton);
+
+function parseRoles(text) {
+  const turns = [];
+  let role = "Рассказчик";
+  let lines = [];
+  const flush = () => {
+    const text = lines.join("\n").trim();
+    if (normalizeForSpeech(text)) turns.push({ role, text });
+    lines = [];
+  };
+  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
+    const match = line.match(/^\s*\(([^()\n]+)\)\s*:?[ \t]*(.*)$/u);
+    if (match && match[1].trim()) {
+      flush();
+      role = match[1].trim().replace(/\s+/g, " ");
+      lines.push(match[2]);
+    } else {
+      lines.push(line);
+    }
+  }
+  flush();
+  return turns;
+}
+
+function voiceForItem(item) {
+  return item?.role ? state.roleVoices[item.role] : state.selectedVoice;
+}
+
+function roleVoiceAvailable(voice) {
+  if (!voice) return false;
+  if (voice.provider === "fish") return state.fishAvailable;
+  if (voice.provider === "gemini") return state.geminiAvailable;
+  return state.voices.some((entry) => entry.voiceURI === voice.id);
+}
+
+function rolesReady(text = elements.textInput.value, voices = state.roleVoices) {
+  const turns = parseRoles(text);
+  return turns.length > 0 && turns.every((turn) => roleVoiceAvailable(voices[turn.role]));
+}
+
+let draftRoleVoices = Object.create(null);
+const rolesDialog = document.querySelector("#rolesDialog");
+const rolesText = document.querySelector("#rolesText");
+const rolesPrompt = document.querySelector("#rolesPrompt");
+rolesPrompt.value = `Подготовь следующий текст для озвучивания по ролям. Сохрани исходные реплики, их порядок и язык. Каждую реплику начинай с новой строки с меткой (Человек 1), (Человек 2) и так далее; если имена известны, используй (Анна), (Иван). Для одного участника всегда используй одну и ту же метку. Авторский текст помечай (Рассказчик). Не добавляй Markdown, пояснения или список участников. Пример:
+(Человек 1) Привет!
+(Человек 2) Привет, как дела?
+(Человек 1) Хорошо!
+
+Текст для подготовки:
+[Вставь исходный текст]`;
+
+function syncRolesButton() {
+  const button = document.querySelector("#rolesButton");
+  button.setAttribute("aria-pressed", String(state.roleMode));
+  button.textContent = state.roleMode ? "По ролям · включено" : "Читать по ролям";
+}
+
+function renderRoleChoices() {
+  const turns = parseRoles(rolesText.value);
+  const names = [...new Set(turns.map((turn) => turn.role))];
+  document.querySelector("#rolesCount").textContent = `${names.length} ${pluralize(names.length, ["роль", "роли", "ролей"])} · ${turns.length} ${pluralize(turns.length, ["реплика", "реплики", "реплик"])}`;
+  const container = document.querySelector("#rolesVoices");
+  container.replaceChildren();
+  for (const name of names) {
+    const label = document.createElement("label");
+    label.className = "field";
+    const title = document.createElement("span");
+    title.textContent = name;
+    const select = document.createElement("select");
+    select.append(new Option("Выбери голос…", ""));
+    const saved = draftRoleVoices[name];
+    const choices = [...state.voiceChoices];
+    if (saved && !choices.some((voice) => voice.key === saved.key)) choices.push(saved);
+    for (const [provider, heading] of [["system", "Голоса устройства"], ["gemini", "Gemini"], ["fish", "Fish Audio"]]) {
+      const group = document.createElement("optgroup");
+      group.label = heading;
+      choices.filter((voice) => voice.provider === provider && roleVoiceAvailable(voice)).forEach((voice) => {
+        group.append(new Option(`${voice.name}${voice.lang ? ` · ${voice.lang}` : ""}`, voice.key));
+      });
+      if (group.children.length) select.append(group);
+    }
+    select.value = saved?.key || "";
+    select.addEventListener("change", () => {
+      draftRoleVoices[name] = choices.find((voice) => voice.key === select.value);
+      document.querySelector("#rolesStart").disabled = !rolesReady(rolesText.value, draftRoleVoices);
+    });
+    label.append(title, select);
+    container.append(label);
+  }
+  document.querySelector("#rolesStart").disabled = !rolesReady(rolesText.value, draftRoleVoices);
+}
+
+function openRolesDialog() {
+  if (state.childLocked) return;
+  rolesText.value = elements.textInput.value;
+  draftRoleVoices = Object.assign(Object.create(null), state.roleVoices);
+  document.querySelector("#rolesStatus").textContent = "Выбери голос отдельно для каждой роли. После запуска весь диалог читается по порядку.";
+  renderRoleChoices();
+  if (!rolesDialog.open) rolesDialog.showModal();
+}
+
+document.querySelector("#rolesButton").addEventListener("click", openRolesDialog);
+document.querySelector("#rolesClose").addEventListener("click", () => rolesDialog.close());
+rolesText.addEventListener("input", renderRoleChoices);
+document.querySelector("#rolesCopy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(rolesPrompt.value);
+    document.querySelector("#rolesStatus").textContent = "Запрос скопирован — вставь его в свой ИИ-чат вместе с исходным текстом.";
+  } catch {
+    rolesPrompt.closest("details").open = true;
+    rolesPrompt.select();
+    document.querySelector("#rolesStatus").textContent = "Скопируй выделенный запрос: Ctrl+C или ⌘C.";
+  }
+});
+document.querySelector("#rolesStart").addEventListener("click", () => {
+  if (state.childLocked || !rolesReady(rolesText.value, draftRoleVoices)) return;
+  stopSpeech("Готов к чтению по ролям", false);
+  state.roleMode = true;
+  state.roleVoices = Object.assign(Object.create(null), draftRoleVoices);
+  elements.textInput.value = rolesText.value;
+  storage.set("roleMode", "true");
+  storage.set("roleVoices", JSON.stringify(state.roleVoices));
+  syncRolesButton();
+  updateTextMeta();
+  setReadMode(true);
+  rolesDialog.close();
+  startSpeech(0);
+});
+document.querySelector("#rolesDisable").addEventListener("click", () => {
+  if (state.childLocked) return;
+  stopSpeech("Обычное чтение", false);
+  state.roleMode = false;
+  storage.set("roleMode", "false");
+  syncRolesButton();
+  updateTextMeta();
+  rolesDialog.close();
+});
 
 initialize()
   .then(updateFloatingSettingsButton)
