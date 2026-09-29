@@ -1248,14 +1248,6 @@ async function loadGeminiStatus() {
 
 function updateTextMeta() {
   const text = elements.textInput.value;
-  if (text !== lastRolesText) {
-    const detected = /^\s*\([^()\n]+\)[ \t]*:?/mu.test(text);
-    if (detected !== state.roleMode) resetSavedPosition();
-    state.roleMode = detected;
-    lastRolesText = text;
-    storage.set("roleMode", String(state.roleMode));
-    syncRolesButton();
-  }
   renderRoleChoices();
   const plan = createQueue(text);
   const sections = plan.sections.length;
@@ -1947,9 +1939,8 @@ async function initialize() {
     }
   }
 
-  state.roleMode = sharedText === null && storage.get("roleMode") === "true";
+  state.roleMode = storage.get("roleMode") === "true";
   try { state.roleVoices = Object.assign(Object.create(null), JSON.parse(storage.get("roleVoices", "{}"))); } catch {}
-  lastRolesText = sharedText === null ? storage.get("text") : null;
   syncRolesButton();
   restoreStoredCloudVoice();
   elements.textInput.value = sharedText ?? storage.get("text");
@@ -2159,6 +2150,15 @@ window.addEventListener("beforeunload", () => {
 window.addEventListener("scroll", updateFloatingSettingsButton, { passive: true });
 window.addEventListener("resize", updateFloatingSettingsButton);
 
+// Accept common AI dialogue formats, but only when role mode is explicitly enabled.
+function matchRoleLine(line) {
+  const clean = line.trim().replace(/^\*\*([^*]+)\*\*/u, "$1").trim();
+  return clean.match(/^\(([^()\n]+)\)\s*[:：—–-]?[ \t]*(.*)$/u)
+    || clean.match(/^\[([^\]\n]+)\]\s*[:：—–-]?[ \t]*(.*)$/u)
+    || clean.match(/^([\p{L}][\p{L}\p{N} _.'’\-]{0,59})[:：][ \t]*(.*)$/u)
+    || clean.match(/^((?:Человек|Участник|Голос|Speaker|Person)\s*\d+)\s*[—–-]\s*(.*)$/iu);
+}
+
 function parseRoles(text) {
   const turns = [];
   let role = "Рассказчик";
@@ -2169,7 +2169,7 @@ function parseRoles(text) {
     lines = [];
   };
   for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
-    const match = line.match(/^\s*\(([^()\n]+)\)\s*:?[ \t]*(.*)$/u);
+    const match = matchRoleLine(line);
     if (match && match[1].trim()) {
       flush();
       role = match[1].trim().replace(/\s+/g, " ");
@@ -2198,7 +2198,6 @@ function rolesReady(text = elements.textInput.value, voices = state.roleVoices) 
   return turns.length > 0 && turns.every((turn) => roleVoiceAvailable(voices[turn.role]));
 }
 
-let lastRolesText = null;
 const rolesDialog = document.querySelector("#rolesDialog");
 const rolesPrompt = document.querySelector("#rolesPrompt");
 rolesPrompt.value = `Подготовь следующий текст для озвучивания по ролям. Сохрани исходные реплики, их порядок и язык. Каждую реплику начинай с новой строки с меткой (Человек 1), (Человек 2) и так далее; если имена известны, используй (Анна), (Иван). Для одного участника всегда используй одну и ту же метку. Авторский текст помечай (Рассказчик). Не добавляй Markdown, пояснения или список участников. Пример:
@@ -2210,6 +2209,7 @@ rolesPrompt.value = `Подготовь следующий текст для о�
 [Вставь исходный текст]`;
 
 function syncRolesButton() {
+  document.querySelector("#rolesToggle").checked = state.roleMode;
   const button = document.querySelector("#rolesButton");
   button.setAttribute("aria-pressed", String(state.roleMode));
   button.textContent = state.roleMode ? "По ролям · включено" : "Читать по ролям";
@@ -2281,16 +2281,21 @@ document.querySelector("#rolesCopy").addEventListener("click", async () => {
     document.querySelector("#rolesStatus").textContent = "Скопируй выделенный запрос: Ctrl+C или ⌘C.";
   }
 });
-document.querySelector("#rolesDisable").addEventListener("click", () => {
+function setRoleMode(enabled) {
   if (state.childLocked) return;
-  stopSpeech("Обычное чтение", false);
-  state.roleMode = false;
-  lastRolesText = elements.textInput.value;
-  storage.set("roleMode", "false");
+  stopSpeech(enabled ? "Чтение по ролям включено" : "Обычное чтение", false);
+  state.roleMode = enabled;
+  storage.set("roleMode", String(enabled));
+  resetSavedPosition();
   syncRolesButton();
   updateTextMeta();
-  rolesDialog.close();
-});
+  document.querySelector("#rolesStatus").textContent = enabled
+    ? "Режим включён. Закрой окно — голоса участников находятся в настройках на странице."
+    : "Включено обычное чтение.";
+}
+
+document.querySelector("#rolesToggle").addEventListener("change", (event) => setRoleMode(event.target.checked));
+document.querySelector("#rolesDisable").addEventListener("click", () => setRoleMode(false));
 
 initialize()
   .then(updateFloatingSettingsButton)

@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=19" />
+    <link rel="stylesheet" href="styles.css?v=20" />
   </head>
   <body>
     <main class="shell">
@@ -96,7 +96,12 @@
           <div><p class="step">Озвучка диалога</p><h2 id="rolesTitle">Читать по ролям</h2></div>
           <button class="sections-close" id="rolesClose" type="button" aria-label="Закрыть">×</button>
         </div>
-        <p>Скопируй запрос в свой ИИ-чат, добавь исходный текст. Результат вставь в обычное поле Voicy — роли появятся на странице автоматически.</p>
+        <label class="roles-toggle" for="rolesToggle">
+          <span>Читать по ролям</span>
+          <input id="rolesToggle" type="checkbox" role="switch" aria-describedby="rolesHelp" />
+        </label>
+        <p id="rolesHelp">Включи режим и вставь диалог в обычное поле текста. Голоса участников появятся в настройках на странице. Метки (Анна), (Человек 1), [Иван] или Анна: не произносятся. Запуск — обычной кнопкой «Слушать».</p>
+        <p>Чтобы подготовить текст, скопируй запрос в свой ИИ-чат вместе с исходным текстом.</p>
         <textarea id="rolesPrompt" rows="9" readonly aria-label="Запрос для подготовки текста"></textarea>
         <button class="mode-button" id="rolesCopy" type="button">Копировать запрос</button>
         <p id="rolesStatus" aria-live="polite"></p>
@@ -361,6 +366,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=19"></script>
+    <script src="app.js?v=20"></script>
   </body>
 </html>

@@ -1607,3 +1607,10 @@ body {
 .roles-voices { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
 .roles-voices .voice-field { min-width: 0; }
 .roles-voices .voice-picker-button { min-width: 0; }
+
+.roles-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-weight: 700; padding: 16px 0; cursor: pointer; }
+.roles-toggle input { appearance: none; width: 52px; height: 30px; border-radius: 20px; background: #888; position: relative; flex-shrink: 0; cursor: pointer; }
+.roles-toggle input::before { content: ""; position: absolute; width: 22px; height: 22px; top: 4px; left: 4px; border-radius: 50%; background: white; transition: transform .15s; }
+.roles-toggle input:checked { background: var(--accent, #ff5b2b); }
+.roles-toggle input:checked::before { transform: translateX(22px); }
+.roles-toggle input:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
