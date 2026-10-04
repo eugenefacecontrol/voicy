@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f4efe7" />
     <meta name="voicy-share-api" content="https://voicy-share.eugenefacecontrol.workers.dev" />
     <title>Voicy — слушай любой текст</title>
-    <link rel="stylesheet" href="styles.css?v=21" />
+    <link rel="stylesheet" href="styles.css?v=22" />
   </head>
   <body>
     <main class="shell">
@@ -172,6 +172,20 @@
           </div>
           <button class="sections-close" id="shareClose" type="button" aria-label="Закрыть меню публикации">×</button>
         </div>
+
+        <fieldset id="shareSettings" class="share-settings">
+          <legend>Что передать вместе с текстом</legend>
+          <label><input id="shareVoices" type="checkbox" checked /> Голос и голоса всех ролей</label>
+          <label><input id="shareRate" type="checkbox" checked /> Скорость чтения</label>
+          <label><input id="shareRoleMode" type="checkbox" checked /> Режим чтения по ролям и имена</label>
+          <label><input id="shareFont" type="checkbox" checked /> Шрифт текста</label>
+          <label><input id="sharePosition" type="checkbox" /> Начать с выбранного места</label>
+          <label id="shareStartField" class="field" hidden>
+            <span>Откуда начать</span>
+            <select id="shareStart" aria-label="Откуда начать чтение"></select>
+          </label>
+          <small>Без отметки — настройки получателя. Без начальной позиции — читать с начала. Автозапуска нет.</small>
+        </fieldset>
 
         <div class="share-options">
           <button class="share-option primary" id="shareCloudButton" type="button">
@@ -370,6 +384,6 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="app.js?v=21"></script>
+    <script src="app.js?v=22"></script>
   </body>
 </html>

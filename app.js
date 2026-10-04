@@ -310,6 +310,77 @@ function baseShareUrl() {
   return url;
 }
 
+// Versioned payloads keep legacy text-only links readable.
+function shareVoice(voice) {
+  if (!voice || typeof voice.id !== "string" || voice.id.length > 512) return null;
+  if (!["system", "fish", "gemini"].includes(voice.provider)) return null;
+  if (voice.provider === "fish" && !/^[a-f0-9]{32}$/i.test(voice.id)) return null;
+  if (voice.provider === "gemini" && !geminiVoices.some(([id]) => id === voice.id)) return null;
+  return {
+    provider: voice.provider, id: voice.id, key: `${voice.provider}:${voice.id}`,
+    name: String(voice.name || voice.id).slice(0, 160),
+    lang: String(voice.lang || "").slice(0, 40), meta: String(voice.meta || "").slice(0, 240),
+  };
+}
+
+function buildSharePayload() {
+  const settings = {};
+  const included = (id) => document.querySelector(id).checked;
+  const roles = [...new Set(parseRoles(elements.textInput.value).map((turn) => turn.role))];
+  if (included("#shareRate")) settings.rate = state.rate;
+  if (included("#shareFont")) settings.font = elements.fontSelect.value;
+  if (included("#shareRoleMode")) {
+    settings.roleMode = state.roleMode;
+    if (state.roleMode) settings.roleNames = Object.fromEntries(roles.map((role) => [role, state.roleNames[role] || role]));
+  }
+  if (included("#shareVoices")) {
+    settings.voice = shareVoice(state.selectedVoice);
+    if (state.roleMode) settings.roleVoices = Object.fromEntries(roles.map((role) => [role, shareVoice(voiceForItem({ role }))]));
+  }
+  if (included("#sharePosition")) settings.startWord = Number(document.querySelector("#shareStart").value) || 0;
+  return JSON.stringify({ version: 2, text: elements.textInput.value, settings });
+}
+
+function decodeSharePayload(value, version) {
+  if (version !== "2") return { text: value, settings: {} };
+  const payload = JSON.parse(value);
+  if (payload?.version !== 2 || typeof payload.text !== "string" || !payload.settings || typeof payload.settings !== "object") {
+    throw new Error("Некорректный формат общей ссылки");
+  }
+  return payload;
+}
+
+function applySharedSettings(settings, text) {
+  if (typeof settings.roleMode === "boolean") storage.set("roleMode", String(settings.roleMode));
+  if (Number.isFinite(settings.rate) && settings.rate >= 1 && settings.rate <= 4) storage.set("rate", String(settings.rate));
+  if (typeof settings.font === "string" && Object.hasOwn(fontStacks, settings.font)) storage.set("font", settings.font);
+  const voice = shareVoice(settings.voice);
+  if (voice) {
+    storage.set("voice", voice.key);
+    storage.set("voiceChoice", JSON.stringify(voice));
+  }
+  const roles = [...new Set(parseRoles(text).map((turn) => turn.role))];
+  for (const field of ["roleVoices", "roleNames"]) {
+    if (!settings[field] || typeof settings[field] !== "object" || Array.isArray(settings[field])) continue;
+    const values = Object.create(null);
+    for (const role of roles) {
+      if (!Object.hasOwn(settings[field], role)) continue;
+      const value = field === "roleVoices" ? shareVoice(settings[field][role])
+        : typeof settings[field][role] === "string" ? settings[field][role].slice(0, 80) : null;
+      if (value) values[role] = value;
+    }
+    storage.set(field, JSON.stringify(values));
+  }
+}
+
+function invalidatePreparedShare() {
+  preparedShare = null;
+  elements.shareUrl.value = "";
+  elements.shareResult.hidden = true;
+  document.querySelector("#shareStartField").hidden = !document.querySelector("#sharePosition").checked;
+  setShareStatus();
+}
+
 function setShareStatus(message = "", type = "") {
   elements.shareStatus.textContent = message;
   elements.shareStatus.className = `share-status${type ? ` ${type}` : ""}`;
@@ -319,6 +390,7 @@ function setShareBusy(busy) {
   elements.shareCloudButton.disabled = busy || !shareApiUrl;
   elements.shareInlineButton.disabled = busy;
   elements.shareClose.disabled = busy;
+  document.querySelector("#shareSettings").disabled = busy;
 }
 
 function openShareDialog() {
@@ -326,6 +398,12 @@ function openShareDialog() {
   if (!elements.textInput.value.trim()) {
     updatePlayer("idle", "Сначала вставь текст");
     return;
+  }
+  const start = document.querySelector("#shareStart");
+  const word = state.speaking ? state.currentWord : state.resumeWord;
+  start.replaceChildren(new Option(`Текущая позиция · ${timeForWord(word)}`, String(word)));
+  for (const section of createQueue(elements.textInput.value).sections) {
+    start.add(new Option(`Раздел ${section.index + 1} · ${section.preview}`, String(section.startWord)));
   }
   preparedShare = null;
   elements.shareResult.hidden = true;
@@ -399,9 +477,9 @@ async function createInlineShare() {
   setShareBusy(true);
   setShareStatus("Сжимаю текст…");
   try {
-    const compressed = await compressText(elements.textInput.value);
+    const compressed = await compressText(buildSharePayload());
     const url = baseShareUrl();
-    url.hash = new URLSearchParams({ v: "1", text: bytesToBase64Url(compressed) }).toString();
+    url.hash = new URLSearchParams({ v: "2", text: bytesToBase64Url(compressed) }).toString();
     if (url.href.length > maxInlineShareUrlLength) {
       throw new Error(`После сжатия ссылка занимает ${url.href.length.toLocaleString("ru-RU")} символов. Используй короткую ссылку.`);
     }
@@ -418,7 +496,7 @@ async function createCloudShare() {
   setShareBusy(true);
   setShareStatus("Сжимаю и шифрую текст…");
   try {
-    const compressed = await compressText(elements.textInput.value);
+    const compressed = await compressText(buildSharePayload());
     const { packet, rawKey } = await encryptBytes(compressed);
     const response = await fetch(`${shareApiUrl}/shares`, {
       method: "POST",
@@ -430,7 +508,7 @@ async function createCloudShare() {
 
     const url = baseShareUrl();
     url.searchParams.set("share", result.id);
-    url.hash = new URLSearchParams({ key: bytesToBase64Url(rawKey) }).toString();
+    url.hash = new URLSearchParams({ v: "2", key: bytesToBase64Url(rawKey) }).toString();
     await presentShareUrl(url.href, "Зашифрованный текст в Voicy");
   } catch (error) {
     setShareStatus(error.message || "Не удалось создать короткую ссылку", "error");
@@ -451,11 +529,11 @@ async function loadSharedTextFromUrl() {
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.data) throw new Error(result.error || "Текст не найден или уже удалён");
     const compressed = await decryptBytes(base64UrlToBytes(result.data), base64UrlToBytes(keyValue));
-    return decompressText(compressed);
+    return decodeSharePayload(await decompressText(compressed), hash.get("v"));
   }
 
-  if (hash.get("v") === "1" && hash.get("text")) {
-    return decompressText(base64UrlToBytes(hash.get("text")));
+  if (["1", "2"].includes(hash.get("v")) && hash.get("text")) {
+    return decodeSharePayload(await decompressText(base64UrlToBytes(hash.get("text"))), hash.get("v"));
   }
 
   return null;
@@ -1025,7 +1103,7 @@ function openVoicePicker(role = null, trigger = elements.voicePickerButton) {
   state.voicePickerTrigger = trigger;
   trigger.closest(".voice-field").append(elements.voicePickerPanel);
   document.querySelector("#voicePickerTitle").textContent = role ? `Голос · ${state.roleNames[role] || role}` : "Выбрать голос";
-  const selectedProvider = (role ? state.roleVoices[role] : state.selectedVoice)?.provider || "system";
+  const selectedProvider = (role ? voiceForItem({ role }) : state.selectedVoice)?.provider || "system";
   setVoiceGroupExpanded(selectedProvider, true);
   elements.voicePickerPanel.hidden = false;
   renderVoiceChoices();
@@ -1093,7 +1171,7 @@ function renderVoiceChoices(filter = elements.voiceSearch.value) {
       button.className = "voice-option";
       button.dataset.voiceKey = voice.key;
       button.setAttribute("role", "option");
-      button.setAttribute("aria-selected", String(voice.key === (state.voicePickerRole ? state.roleVoices[state.voicePickerRole]?.key : state.selectedVoiceKey)));
+      button.setAttribute("aria-selected", String(voice.key === (state.voicePickerRole ? voiceForItem({ role: state.voicePickerRole })?.key : state.selectedVoiceKey)));
       name.textContent = voice.name;
       meta.textContent = voice.meta;
       badge.className = "voice-badge";
@@ -1798,7 +1876,7 @@ function startSpeech(startWord = 0) {
     updatePlayer("idle", "Выбери доступный голос для каждой роли");
     if (!state.childLocked) {
       document.querySelector("#rolesSettings").scrollIntoView({ behavior: "smooth", block: "center" });
-      const missing = [...document.querySelectorAll(".role-voice-button")].find((button) => !roleVoiceAvailable(state.roleVoices[button.dataset.role]));
+      const missing = [...document.querySelectorAll(".role-voice-button")].find((button) => !roleVoiceAvailable(voiceForItem({ role: button.dataset.role })));
       if (missing) openVoicePicker(missing.dataset.role, missing);
     }
     return;
@@ -1940,12 +2018,13 @@ async function initialize() {
     }
   }
 
+  if (sharedText !== null) applySharedSettings(sharedText.settings, sharedText.text);
   state.roleMode = storage.get("roleMode") === "true";
   try { state.roleVoices = Object.assign(Object.create(null), JSON.parse(storage.get("roleVoices", "{}"))); } catch {}
   try { state.roleNames = Object.assign(Object.create(null), JSON.parse(storage.get("roleNames", "{}"))); } catch {}
   syncRolesButton();
   restoreStoredCloudVoice();
-  elements.textInput.value = sharedText ?? storage.get("text");
+  elements.textInput.value = sharedText?.text ?? storage.get("text");
   if (sharedText !== null) {
     resetSavedPosition();
     storage.set("readMode", "true");
@@ -1956,6 +2035,9 @@ async function initialize() {
   const initialPlan = createQueue(elements.textInput.value);
   state.totalWords = initialPlan.totalWords;
   state.resumeWord = loadSavedPosition(elements.textInput.value, initialPlan.totalWords);
+  if (sharedText && Number.isSafeInteger(sharedText.settings.startWord) && sharedText.settings.startWord >= 0) {
+    savePosition(sharedText.settings.startWord, true);
+  }
   state.currentWord = state.resumeWord;
   state.lastSavedWord = state.resumeWord;
   const savedMode = storage.get("readMode");
@@ -2007,6 +2089,7 @@ elements.exportClose.addEventListener("click", closeExportDialog);
 elements.exportBackdrop.addEventListener("click", closeExportDialog);
 elements.exportSectionButton.addEventListener("click", exportCurrentSection);
 elements.exportAllButton.addEventListener("click", exportAllSections);
+document.querySelector("#shareSettings").addEventListener("change", invalidatePreparedShare);
 elements.shareButton.addEventListener("click", openShareDialog);
 elements.shareClose.addEventListener("click", closeShareDialog);
 elements.shareBackdrop.addEventListener("click", closeShareDialog);
@@ -2184,8 +2267,13 @@ function parseRoles(text) {
   return turns;
 }
 
+function defaultRoleVoice() {
+  return state.voiceChoices.find((voice) => voice.provider === "system" && voice.lang?.toLowerCase().startsWith("ru") && roleVoiceAvailable(voice))
+    || state.voiceChoices.find(roleVoiceAvailable);
+}
+
 function voiceForItem(item) {
-  return item?.role ? state.roleVoices[item.role] : state.selectedVoice;
+  return item?.role ? state.roleVoices[item.role] || defaultRoleVoice() : state.selectedVoice;
 }
 
 function roleVoiceAvailable(voice) {
@@ -2197,7 +2285,7 @@ function roleVoiceAvailable(voice) {
 
 function rolesReady(text = elements.textInput.value, voices = state.roleVoices) {
   const turns = parseRoles(text);
-  return turns.length > 0 && turns.every((turn) => roleVoiceAvailable(voices[turn.role]));
+  return turns.length > 0 && turns.every((turn) => roleVoiceAvailable(voices[turn.role] || defaultRoleVoice()));
 }
 
 const rolesDialog = document.querySelector("#rolesDialog");
@@ -2236,13 +2324,8 @@ function renderRoleChoices() {
     : !hasMarkers
       ? "Метки участников не найдены: пока весь текст читает Рассказчик. Добавь перед репликами (Анна), (Иван) или подготовь текст с помощью запроса в попапе."
       : "Для каждого участника — своё имя и голос с поиском. Имена и метки не произносятся. Запуск — кнопкой «Слушать».";
-  let assigned = false;
   for (const name of names) {
-    if (!state.roleVoices[name]) {
-      const fallback = roleVoiceAvailable(state.selectedVoice) ? state.selectedVoice : state.voiceChoices.find(roleVoiceAvailable);
-      if (fallback) { state.roleVoices[name] = fallback; assigned = true; }
-    }
-    const voice = state.roleVoices[name];
+    const voice = voiceForItem({ role: name });
     const field = document.createElement("div");
     field.className = "field voice-field";
     const label = document.createElement("span");
@@ -2271,7 +2354,7 @@ function renderRoleChoices() {
     button.setAttribute("aria-label", `Выбрать голос: ${state.roleNames[name] || name}`);
     const copy = document.createElement("span");
     const title = document.createElement("strong");
-    title.textContent = voice?.name || "Выбрать голос";
+    title.textContent = state.roleVoices[name] ? voice.name : "Голос по умолчанию";
     const meta = document.createElement("small");
     meta.textContent = voice && !roleVoiceAvailable(voice) ? "Голос недоступен — выбери другой" : (voice?.meta || "Поиск по имени и языку");
     copy.append(title, meta);
@@ -2283,10 +2366,22 @@ function renderRoleChoices() {
       if (!elements.voicePickerPanel.hidden && state.voicePickerRole === name) closeVoicePicker();
       else openVoicePicker(name, button);
     });
-    field.append(label, nameInput, button);
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "text-button";
+    reset.textContent = "Вернуть голос по умолчанию";
+    reset.hidden = !state.roleVoices[name];
+    reset.disabled = state.childLocked;
+    reset.addEventListener("click", () => {
+      delete state.roleVoices[name];
+      storage.set("roleVoices", JSON.stringify(state.roleVoices));
+      renderRoleChoices();
+      if (state.speaking) startSpeech(state.currentWord);
+    });
+    field.append(label, nameInput, button, reset);
     container.append(field);
   }
-  if (assigned) storage.set("roleVoices", JSON.stringify(state.roleVoices));
+
 }
 
 function openRolesDialog() {
