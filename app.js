@@ -736,6 +736,9 @@ function renderTextPreview(text, plan = createQueue(text)) {
   sections.forEach((section, index) => {
     const paragraph = document.createElement("p");
     const copy = document.createElement("span");
+    const actions = document.createElement("span");
+    const copyButton = document.createElement("button");
+    const contextButton = document.createElement("button");
     const playButton = document.createElement("button");
     const sectionData = plan.sections[index];
     paragraph.className = "preview-section";
@@ -745,8 +748,19 @@ function renderTextPreview(text, plan = createQueue(text)) {
     paragraph.tabIndex = 0;
     copy.className = "preview-copy";
     copy.textContent = section;
+    actions.className = "preview-actions";
+    copyButton.type = "button";
+    copyButton.className = "preview-action-button preview-copy-button";
+    copyButton.dataset.copyMode = "text";
+    copyButton.setAttribute("aria-label", `Копировать текст раздела ${index + 1}`);
+    copyButton.textContent = "⧉ Копировать";
+    contextButton.type = "button";
+    contextButton.className = "preview-action-button preview-copy-button";
+    contextButton.dataset.copyMode = "context";
+    contextButton.setAttribute("aria-label", `Копировать раздел ${index + 1} с номером и контекстом`);
+    contextButton.textContent = "# С контекстом";
     playButton.type = "button";
-    playButton.className = "preview-play-button";
+    playButton.className = "preview-action-button preview-play-button";
     playButton.dataset.sectionIndex = String(index);
     playButton.dataset.startWord = String(sectionData?.startWord || 0);
     playButton.setAttribute("aria-label", `Озвучить раздел ${index + 1} с начала`);
@@ -757,9 +771,47 @@ function renderTextPreview(text, plan = createQueue(text)) {
       roleLabel.textContent = state.roleNames[turns[index]?.role] || turns[index]?.role;
       paragraph.append(roleLabel);
     }
-    paragraph.append(copy, playButton);
+    actions.append(copyButton, contextButton, playButton);
+    paragraph.append(copy, actions);
     elements.textPreview.append(paragraph);
   });
+}
+
+async function writePreviewClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const fallback = document.createElement("textarea");
+  fallback.value = text;
+  fallback.setAttribute("readonly", "");
+  fallback.style.position = "fixed";
+  fallback.style.opacity = "0";
+  document.body.append(fallback);
+  fallback.select();
+  const copied = document.execCommand("copy");
+  fallback.remove();
+  if (!copied) throw new Error("copy failed");
+}
+
+async function copyPreviewSection(section, button) {
+  const text = section.querySelector(".preview-copy")?.textContent.trim() || "";
+  if (!text) return;
+  const sectionNumber = Number(section.dataset.sectionIndex) + 1;
+  const sectionTotal = elements.textPreview.querySelectorAll(".preview-section").length;
+  const role = section.querySelector(".preview-role")?.textContent.trim();
+  const context = [`Контекст из Voicy — раздел ${sectionNumber} из ${sectionTotal}${role ? `, ${role}` : ""}:`, "", text].join("\n");
+  const originalLabel = button.textContent;
+  try {
+    await writePreviewClipboard(button.dataset.copyMode === "context" ? context : text);
+    button.textContent = "✓ Скопировано";
+    navigator.vibrate?.(8);
+  } catch {
+    button.textContent = "Не удалось";
+  }
+  window.setTimeout(() => {
+    if (button.isConnected) button.textContent = originalLabel;
+  }, 1600);
 }
 
 function resetTrackedWords(section) {
@@ -2140,12 +2192,17 @@ elements.viewModeButton.addEventListener("click", () => {
   setReadMode(!state.readMode, state.readMode);
 });
 
-elements.textPreview.addEventListener("click", (event) => {
+elements.textPreview.addEventListener("click", async (event) => {
   const section = event.target.closest(".preview-section");
   if (!section) return;
 
   elements.textPreview.querySelector(".preview-section.action-visible")?.classList.remove("action-visible");
   section.classList.add("action-visible");
+  const copyButton = event.target.closest(".preview-copy-button");
+  if (copyButton) {
+    await copyPreviewSection(section, copyButton);
+    return;
+  }
   if (!event.target.closest(".preview-play-button")) return;
 
   highlightSection(Number(section.dataset.sectionIndex), true, "auto");
@@ -2155,7 +2212,7 @@ elements.textPreview.addEventListener("click", (event) => {
 elements.textPreview.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;
   const section = event.target.closest(".preview-section");
-  if (!section || event.target.closest(".preview-play-button")) return;
+  if (!section || event.target.closest("button")) return;
   event.preventDefault();
   section.classList.add("action-visible");
   section.querySelector(".preview-play-button")?.focus();

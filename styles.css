@@ -289,10 +289,20 @@ textarea::placeholder {
   transition: border-color 180ms ease, background 180ms ease;
 }
 
-.preview-play-button {
+.preview-actions {
   display: inline-flex;
   align-items: center;
-  margin: 6px 0 0 10px;
+  gap: 6px;
+  margin: 8px 0 0 10px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.preview-action-button {
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--ink);
   border-radius: 999px;
   padding: 6px 10px;
@@ -302,23 +312,20 @@ textarea::placeholder {
   font-size: 0.58rem;
   font-weight: 600;
   line-height: 1;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(3px);
-  transition: color 160ms ease, background 160ms ease, opacity 160ms ease, transform 160ms ease;
+  transition: color 160ms ease, background 160ms ease;
   white-space: nowrap;
 }
 
-.preview-section:hover .preview-play-button,
-.preview-section:focus-within .preview-play-button,
-.preview-section.action-visible .preview-play-button {
+.preview-section:hover .preview-actions,
+.preview-section:focus-within .preview-actions,
+.preview-section.action-visible .preview-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
 }
 
-.preview-play-button:hover,
-.preview-play-button:focus-visible {
+.preview-action-button:hover,
+.preview-action-button:focus-visible {
   color: white;
   background: var(--ink);
 }
@@ -1388,8 +1395,9 @@ footer {
     padding-left: 16px;
   }
 
-  .preview-play-button {
+  .preview-actions {
     margin-left: 6px;
+    flex-wrap: wrap;
   }
 
   footer {
