@@ -132,7 +132,7 @@ const fontStacks = {
 };
 
 const languageNames = typeof Intl.DisplayNames === "function"
-  ? new Intl.DisplayNames(["ru"], { type: "language" })
+  ? new Intl.DisplayNames([uiLang], { type: "language" })
   : null;
 
 function languageLabel(code = "") {
@@ -208,6 +208,7 @@ const storage = {
 };
 
 function pluralize(number, forms) {
+  if (uiLang === "en") return number === 1 ? forms[0] : forms[2];
   const mod10 = number % 10;
   const mod100 = number % 100;
   if (mod10 === 1 && mod100 !== 11) return forms[0];
@@ -267,7 +268,7 @@ function base64UrlToBytes(value) {
 }
 
 async function compressText(text) {
-  if (!("CompressionStream" in window)) throw new Error("Этот браузер не поддерживает сжатие ссылок");
+  if (!("CompressionStream" in window)) throw new Error(t("Этот браузер не поддерживает сжатие ссылок"));
   const stream = new Blob([new TextEncoder().encode(text)])
     .stream()
     .pipeThrough(new CompressionStream("gzip"));
@@ -275,7 +276,7 @@ async function compressText(text) {
 }
 
 async function decompressText(bytes) {
-  if (!("DecompressionStream" in window)) throw new Error("Этот браузер не поддерживает распаковку ссылки");
+  if (!("DecompressionStream" in window)) throw new Error(t("Этот браузер не поддерживает распаковку ссылки"));
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
   return new TextDecoder().decode(await new Response(stream).arrayBuffer());
 }
@@ -293,7 +294,7 @@ async function encryptBytes(bytes) {
 }
 
 async function decryptBytes(packet, rawKey) {
-  if (packet.length < 30 || packet[0] !== 1) throw new Error("Неизвестный формат зашифрованной ссылки");
+  if (packet.length < 30 || packet[0] !== 1) throw new Error(t("Неизвестный формат зашифрованной ссылки"));
   const key = await crypto.subtle.importKey("raw", rawKey, "AES-GCM", false, ["decrypt"]);
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: packet.slice(1, 13) },
@@ -306,6 +307,7 @@ async function decryptBytes(packet, rawKey) {
 function baseShareUrl() {
   const url = new URL(window.location.href);
   url.search = "";
+  if (uiLang === "ru") url.searchParams.set("lang", "ru");
   url.hash = "";
   return url;
 }
@@ -345,7 +347,7 @@ function decodeSharePayload(value, version) {
   if (version !== "2") return { text: value, settings: {} };
   const payload = JSON.parse(value);
   if (payload?.version !== 2 || typeof payload.text !== "string" || !payload.settings || typeof payload.settings !== "object") {
-    throw new Error("Некорректный формат общей ссылки");
+    throw new Error(t("Некорректный формат общей ссылки"));
   }
   return payload;
 }
@@ -396,19 +398,19 @@ function setShareBusy(busy) {
 function openShareDialog() {
   if (state.childLocked) return;
   if (!elements.textInput.value.trim()) {
-    updatePlayer("idle", "Сначала вставь текст");
+    updatePlayer("idle", t("Сначала вставь текст"));
     return;
   }
   const start = document.querySelector("#shareStart");
   const word = state.speaking ? state.currentWord : state.resumeWord;
-  start.replaceChildren(new Option(`Текущая позиция · ${timeForWord(word)}`, String(word)));
+  start.replaceChildren(new Option(t`Текущая позиция · ${timeForWord(word)}`, String(word)));
   for (const section of createQueue(elements.textInput.value).sections) {
-    start.add(new Option(`Раздел ${section.index + 1} · ${section.preview}`, String(section.startWord)));
+    start.add(new Option(t`Раздел ${section.index + 1} · ${section.preview}`, String(section.startWord)));
   }
   preparedShare = null;
   elements.shareResult.hidden = true;
   elements.shareUrl.value = "";
-  setShareStatus(shareApiUrl ? "" : "Короткая ссылка станет доступна после подключения Cloudflare Worker.");
+  setShareStatus(shareApiUrl ? "" : t("Короткая ссылка станет доступна после подключения Cloudflare Worker."));
   elements.shareBackdrop.hidden = false;
   elements.shareDialog.hidden = false;
   elements.shareCloudButton.disabled = !shareApiUrl;
@@ -439,11 +441,11 @@ async function copyPreparedShare() {
       elements.shareUrl.setSelectionRange(0, preparedShare.url.length);
       if (!document.execCommand("copy")) throw new Error();
     }
-    setShareStatus("Ссылка скопирована в буфер обмена.", "success");
+    setShareStatus(t("Ссылка скопирована в буфер обмена."), "success");
   } catch {
     elements.shareUrl.focus();
     elements.shareUrl.select();
-    setShareStatus("Выделил ссылку — нажми «Копировать» в меню браузера.");
+    setShareStatus(t("Выделил ссылку — нажми «Копировать» в меню браузера."));
   }
 }
 
@@ -452,14 +454,14 @@ async function sendPreparedShare() {
   if (navigator.share) {
     try {
       await navigator.share(preparedShare);
-      setShareStatus("Ссылка отправлена.", "success");
+      setShareStatus(t("Ссылка отправлена."), "success");
       return;
     } catch (error) {
       if (error?.name === "AbortError") {
-        setShareStatus("Отправка отменена.");
+        setShareStatus(t("Отправка отменена."));
         return;
       }
-      setShareStatus("Меню отправки не открылось — ссылку можно скопировать ниже.");
+      setShareStatus(t("Меню отправки не открылось — ссылку можно скопировать ниже."));
       return;
     }
   }
@@ -469,23 +471,23 @@ async function sendPreparedShare() {
 
 async function presentShareUrl(url, title) {
   prepareShareUrl(url, title);
-  setShareStatus("Ссылка готова. Можно отправить или скопировать.", "success");
+  setShareStatus(t("Ссылка готова. Можно отправить или скопировать."), "success");
   await sendPreparedShare();
 }
 
 async function createInlineShare() {
   setShareBusy(true);
-  setShareStatus("Сжимаю текст…");
+  setShareStatus(t("Сжимаю текст…"));
   try {
     const compressed = await compressText(buildSharePayload());
     const url = baseShareUrl();
     url.hash = new URLSearchParams({ v: "2", text: bytesToBase64Url(compressed) }).toString();
     if (url.href.length > maxInlineShareUrlLength) {
-      throw new Error(`После сжатия ссылка занимает ${url.href.length.toLocaleString("ru-RU")} символов. Используй короткую ссылку.`);
+      throw new Error(t`После сжатия ссылка занимает ${url.href.length.toLocaleString(uiLang)} символов. Используй короткую ссылку.`);
     }
-    await presentShareUrl(url.href, "Текст в Voicy");
+    await presentShareUrl(url.href, t("Текст в Voicy"));
   } catch (error) {
-    setShareStatus(error.message || "Не удалось создать ссылку", "error");
+    setShareStatus(error.message || t("Не удалось создать ссылку"), "error");
   } finally {
     setShareBusy(false);
   }
@@ -494,7 +496,7 @@ async function createInlineShare() {
 async function createCloudShare() {
   if (!shareApiUrl) return;
   setShareBusy(true);
-  setShareStatus("Сжимаю и шифрую текст…");
+  setShareStatus(t("Сжимаю и шифрую текст…"));
   try {
     const compressed = await compressText(buildSharePayload());
     const { packet, rawKey } = await encryptBytes(compressed);
@@ -504,14 +506,14 @@ async function createCloudShare() {
       body: JSON.stringify({ data: bytesToBase64Url(packet) }),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.id) throw new Error(result.error || "Cloudflare не сохранил текст");
+    if (!response.ok || !result.id) throw new Error(result.error || t("Cloudflare не сохранил текст"));
 
     const url = baseShareUrl();
     url.searchParams.set("share", result.id);
     url.hash = new URLSearchParams({ v: "2", key: bytesToBase64Url(rawKey) }).toString();
-    await presentShareUrl(url.href, "Зашифрованный текст в Voicy");
+    await presentShareUrl(url.href, t("Зашифрованный текст в Voicy"));
   } catch (error) {
-    setShareStatus(error.message || "Не удалось создать короткую ссылку", "error");
+    setShareStatus(error.message || t("Не удалось создать короткую ссылку"), "error");
   } finally {
     setShareBusy(false);
   }
@@ -522,12 +524,12 @@ async function loadSharedTextFromUrl() {
   const cloudId = new URLSearchParams(window.location.search).get("share");
 
   if (cloudId) {
-    if (!shareApiUrl) throw new Error("Cloudflare API ещё не подключён");
+    if (!shareApiUrl) throw new Error(t("Cloudflare API ещё не подключён"));
     const keyValue = hash.get("key");
-    if (!keyValue) throw new Error("В короткой ссылке отсутствует ключ расшифровки");
+    if (!keyValue) throw new Error(t("В короткой ссылке отсутствует ключ расшифровки"));
     const response = await fetch(`${shareApiUrl}/shares/${encodeURIComponent(cloudId)}`);
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.data) throw new Error(result.error || "Текст не найден или уже удалён");
+    if (!response.ok || !result.data) throw new Error(result.error || t("Текст не найден или уже удалён"));
     const compressed = await decryptBytes(base64UrlToBytes(result.data), base64UrlToBytes(keyValue));
     return decodeSharePayload(await decompressText(compressed), hash.get("v"));
   }
@@ -728,7 +730,7 @@ function renderTextPreview(text, plan = createQueue(text)) {
   if (!sections.length) {
     const empty = document.createElement("p");
     empty.className = "preview-empty";
-    empty.textContent = "Текст пока пуст. Нажми «Редактировать» или «Вставить текст».";
+    empty.textContent = t("Текст пока пуст. Нажми «Редактировать» или «Вставить текст».");
     elements.textPreview.append(empty);
     return;
   }
@@ -752,19 +754,19 @@ function renderTextPreview(text, plan = createQueue(text)) {
     copyButton.type = "button";
     copyButton.className = "preview-action-button preview-copy-button";
     copyButton.dataset.copyMode = "text";
-    copyButton.setAttribute("aria-label", `Копировать текст раздела ${index + 1}`);
-    copyButton.textContent = "⧉ Копировать";
+    copyButton.setAttribute("aria-label", t`Копировать текст раздела ${index + 1}`);
+    copyButton.textContent = t("⧉ Копировать");
     contextButton.type = "button";
     contextButton.className = "preview-action-button preview-copy-button";
     contextButton.dataset.copyMode = "context";
-    contextButton.setAttribute("aria-label", `Копировать раздел ${index + 1} с номером и контекстом`);
-    contextButton.textContent = "# С контекстом";
+    contextButton.setAttribute("aria-label", t`Копировать раздел ${index + 1} с номером и контекстом`);
+    contextButton.textContent = t("# С контекстом");
     playButton.type = "button";
     playButton.className = "preview-action-button preview-play-button";
     playButton.dataset.sectionIndex = String(index);
     playButton.dataset.startWord = String(sectionData?.startWord || 0);
-    playButton.setAttribute("aria-label", `Озвучить раздел ${index + 1} с начала`);
-    playButton.textContent = "▶ Озвучить раздел";
+    playButton.setAttribute("aria-label", t`Озвучить раздел ${index + 1} с начала`);
+    playButton.textContent = t("▶ Озвучить раздел");
     if (state.roleMode) {
       const roleLabel = document.createElement("strong");
       roleLabel.className = "preview-role";
@@ -800,14 +802,14 @@ async function copyPreviewSection(section, button) {
   const sectionNumber = Number(section.dataset.sectionIndex) + 1;
   const sectionTotal = elements.textPreview.querySelectorAll(".preview-section").length;
   const role = section.querySelector(".preview-role")?.textContent.trim();
-  const context = [`Контекст из Voicy — раздел ${sectionNumber} из ${sectionTotal}${role ? `, ${role}` : ""}:`, "", text].join("\n");
+  const context = [t`Контекст из Voicy — раздел ${sectionNumber} из ${sectionTotal}${role ? `, ${role}` : ""}:`, "", text].join("\n");
   const originalLabel = button.textContent;
   try {
     await writePreviewClipboard(button.dataset.copyMode === "context" ? context : text);
-    button.textContent = "✓ Скопировано";
+    button.textContent = t("✓ Скопировано");
     navigator.vibrate?.(8);
   } catch {
-    button.textContent = "Не удалось";
+    button.textContent = t("Не удалось");
   }
   window.setTimeout(() => {
     if (button.isConnected) button.textContent = originalLabel;
@@ -907,7 +909,7 @@ function setReadMode(enabled, shouldFocus = false) {
   elements.textPreview.hidden = !state.readMode;
   elements.viewModeButton.setAttribute("aria-pressed", String(state.readMode));
   elements.viewModeIcon.textContent = state.readMode ? "✎" : "Aa";
-  elements.viewModeLabel.textContent = state.readMode ? "Редактировать" : "Читать";
+  elements.viewModeLabel.textContent = state.readMode ? t("Редактировать") : t("Читать");
   storage.set("readMode", String(state.readMode));
   if (!state.readMode && shouldFocus) elements.textInput.focus();
 }
@@ -943,7 +945,7 @@ function renderSections(plan) {
     copy.className = "section-copy";
     copy.textContent = section.preview;
     button.append(time, copy);
-    button.setAttribute("aria-label", `Раздел ${section.index + 1}, ${formatTime(seconds)}: ${section.preview}`);
+    button.setAttribute("aria-label", t`Раздел ${section.index + 1}, ${formatTime(seconds)}: ${section.preview}`);
     elements.sectionsList.append(button);
   });
   markActiveSectionInList();
@@ -987,10 +989,10 @@ function updateFloatingSettingsButton() {
   elements.floatingSettingsButton.hidden = !showSettings && !showScrollTop;
   elements.floatingSettingsButton.dataset.action = showScrollTop ? "top" : "settings";
   elements.floatingSettingsIcon.textContent = showScrollTop ? "↑" : "↓";
-  elements.floatingSettingsLabel.textContent = showScrollTop ? "Наверх" : "Настройки";
+  elements.floatingSettingsLabel.textContent = showScrollTop ? t("Наверх") : t("Настройки");
   elements.floatingSettingsButton.setAttribute(
     "aria-label",
-    showScrollTop ? "Вернуться наверх" : "Перейти к настройкам",
+    showScrollTop ? t("Вернуться наверх") : t("Перейти к настройкам"),
   );
 }
 
@@ -1054,15 +1056,15 @@ function closeChildLockDialog() {
 
 function openChildLockDialog() {
   const unlocking = state.childLocked;
-  elements.childLockTitle.textContent = unlocking ? "Введи PIN" : "Придумай PIN";
-  elements.childLockPinLabel.textContent = unlocking ? "PIN для разблокировки" : "Четыре цифры";
+  elements.childLockTitle.textContent = unlocking ? t("Введи PIN") : t("Придумай PIN");
+  elements.childLockPinLabel.textContent = unlocking ? t("PIN для разблокировки") : t("Четыре цифры");
   elements.childLockConfirmField.hidden = unlocking;
   elements.childLockConfirm.required = !unlocking;
   elements.childLockPin.autocomplete = unlocking ? "current-password" : "new-password";
-  elements.childLockSubmit.textContent = unlocking ? "Разблокировать" : "Заблокировать";
+  elements.childLockSubmit.textContent = unlocking ? t("Разблокировать") : t("Заблокировать");
   elements.childLockStatus.textContent = unlocking
-    ? "После разблокировки настройки снова можно будет менять."
-    : "Запомни PIN: восстановление через аккаунт не предусмотрено.";
+    ? t("После разблокировки настройки снова можно будет менять.")
+    : t("Запомни PIN: восстановление через аккаунт не предусмотрено.");
   elements.childLockForm.reset();
   elements.childLockDialog.hidden = false;
   elements.childLockBackdrop.hidden = false;
@@ -1075,7 +1077,7 @@ function applyChildLock(locked) {
   elements.childLockButton.classList.toggle("locked", state.childLocked);
   elements.childLockButton.setAttribute("aria-pressed", String(state.childLocked));
   elements.childLockIcon.textContent = state.childLocked ? "🔓" : "🔒";
-  elements.childLockLabel.textContent = state.childLocked ? "Разблокировать" : "Для детей";
+  elements.childLockLabel.textContent = state.childLocked ? t("Разблокировать") : t("Для детей");
 
   if (state.childLocked) {
     setReadMode(true);
@@ -1105,14 +1107,14 @@ async function submitChildLock(event) {
   const pin = elements.childLockPin.value.replace(/\D/g, "");
   const confirmation = elements.childLockConfirm.value.replace(/\D/g, "");
   if (!/^\d{4}$/.test(pin)) {
-    elements.childLockStatus.textContent = "PIN должен состоять ровно из четырёх цифр.";
+    elements.childLockStatus.textContent = t("PIN должен состоять ровно из четырёх цифр.");
     elements.childLockPin.focus();
     return;
   }
 
   if (!state.childLocked) {
     if (pin !== confirmation) {
-      elements.childLockStatus.textContent = "PIN-коды не совпадают. Попробуй ещё раз.";
+      elements.childLockStatus.textContent = t("PIN-коды не совпадают. Попробуй ещё раз.");
       elements.childLockConfirm.focus();
       return;
     }
@@ -1123,7 +1125,7 @@ async function submitChildLock(event) {
     storage.set("childLocked", "true");
     applyChildLock(true);
     closeChildLockDialog();
-    updatePlayer(state.speaking ? (state.paused ? "paused" : "playing") : "idle", "Детский режим включён");
+    updatePlayer(state.speaking ? (state.paused ? "paused" : "playing") : "idle", t("Детский режим включён"));
     return;
   }
 
@@ -1131,7 +1133,7 @@ async function submitChildLock(event) {
   const savedHash = storage.get("childLockHash");
   const enteredHash = await childLockDigest(pin, salt);
   if (!salt || !savedHash || enteredHash !== savedHash) {
-    elements.childLockStatus.textContent = "Неверный PIN.";
+    elements.childLockStatus.textContent = t("Неверный PIN.");
     elements.childLockPin.select();
     return;
   }
@@ -1141,7 +1143,7 @@ async function submitChildLock(event) {
   storage.remove("childLockHash");
   applyChildLock(false);
   closeChildLockDialog();
-  updatePlayer(state.speaking ? (state.paused ? "paused" : "playing") : "idle", "Детский режим выключен");
+  updatePlayer(state.speaking ? (state.paused ? "paused" : "playing") : "idle", t("Детский режим выключен"));
 }
 
 function keepPinNumeric(event) {
@@ -1154,7 +1156,7 @@ function openVoicePicker(role = null, trigger = elements.voicePickerButton) {
   state.voicePickerRole = role;
   state.voicePickerTrigger = trigger;
   trigger.closest(".voice-field").append(elements.voicePickerPanel);
-  document.querySelector("#voicePickerTitle").textContent = role ? `Голос · ${state.roleNames[role] || role}` : "Выбрать голос";
+  document.querySelector("#voicePickerTitle").textContent = role ? t`Голос · ${state.roleNames[role] || role}` : t("Выбрать голос");
   const selectedProvider = (role ? voiceForItem({ role }) : state.selectedVoice)?.provider || "system";
   setVoiceGroupExpanded(selectedProvider, true);
   elements.voicePickerPanel.hidden = false;
@@ -1236,8 +1238,8 @@ function renderVoiceChoices(filter = elements.voiceSearch.value) {
 
   elements.voiceSearchClear.hidden = !filter;
   if (!choices.length) {
-    elements.voiceSearchStatus.textContent = "Ничего не найдено. Попробуй имя или язык.";
-  } else if (elements.voiceSearchStatus.textContent.startsWith("Ничего")) {
+    elements.voiceSearchStatus.textContent = t("Ничего не найдено. Попробуй имя или язык.");
+  } else if (elements.voiceSearchStatus.textContent.startsWith(t("Ничего"))) {
     elements.voiceSearchStatus.textContent = "";
   }
 }
@@ -1292,18 +1294,18 @@ function chooseInitialVoice() {
 
 async function loadFishVoices(query = "") {
   if (!state.fishAvailable || !shareApiUrl) return;
-  elements.voiceSearchStatus.textContent = "Ищу голоса Fish Audio…";
+  elements.voiceSearchStatus.textContent = t("Ищу голоса Fish Audio…");
   try {
     const response = await fetch(`${shareApiUrl}/fish/voices?q=${encodeURIComponent(query)}`);
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || "Каталог Fish Audio недоступен");
+    if (!response.ok) throw new Error(result.error || t("Каталог Fish Audio недоступен"));
     const fishChoices = (result.items || []).map((voice) => ({
       key: `fish:${voice.id}`,
       id: voice.id,
       provider: "fish",
       name: voice.title,
       lang: (voice.languages || []).map(languageLabel).join(", "),
-      meta: `${(voice.languages || []).map(languageLabel).join(", ") || "мультиязычный"} · модель сообщества · ${voice.author}`,
+      meta: t`${(voice.languages || []).map(languageLabel).join(", ") || t("мультиязычный")} · модель сообщества · ${voice.author}`,
     }));
     const preservedFish = [state.selectedVoice, ...Object.values(state.roleVoices)]
       .filter((voice, index, all) => voice?.provider === "fish"
@@ -1314,13 +1316,13 @@ async function loadFishVoices(query = "") {
       ...preservedFish,
       ...fishChoices,
     ];
-    elements.voiceSearchStatus.textContent = `${fishChoices.length} голосов Fish · бесплатная модель`;
+    elements.voiceSearchStatus.textContent = t`${fishChoices.length} голосов Fish · бесплатная модель`;
     renderVoiceChoices(query);
     const savedFish = fishChoices.find((voice) => voice.key === storage.get("voice"));
     if (savedFish && state.selectedVoiceKey !== savedFish.key) selectVoiceChoice(savedFish, false);
     else chooseInitialVoice();
   } catch (error) {
-    elements.voiceSearchStatus.textContent = error.message || "Fish Audio временно недоступен";
+    elements.voiceSearchStatus.textContent = error.message || t("Fish Audio временно недоступен");
   }
 }
 
@@ -1341,8 +1343,8 @@ async function loadFishStatus() {
 function updateVoiceHint() {
   const sources = [state.geminiAvailable && "Gemini", state.fishAvailable && "Fish Audio"].filter(Boolean);
   elements.voiceHint.textContent = sources.length
-    ? `Системные голоса и бесплатные облачные: ${sources.join(", ")}`
-    : "Голоса Gemini и Fish появляются при доступе к бесплатным моделям";
+    ? t`Системные голоса и бесплатные облачные: ${sources.join(", ")}`
+    : t("Голоса Gemini и Fish появляются при доступе к бесплатным моделям");
 }
 
 function loadGeminiVoices() {
@@ -1353,7 +1355,7 @@ function loadGeminiVoices() {
     provider: "gemini",
     name,
     lang: "",
-    meta: `${style} · мультиязычный · стиль через текст`
+    meta: t`${style} · мультиязычный · стиль через текст`
   }));
   state.voiceChoices = [
     ...state.voiceChoices.filter((voice) => voice.provider !== "gemini"),
@@ -1385,9 +1387,9 @@ function updateTextMeta() {
   const words = plan.totalWords;
   const minutes = words ? Math.max(1, Math.ceil(words / (150 * state.rate))) : 0;
 
-  elements.sectionCount.textContent = `${sections} ${pluralize(sections, ["раздел", "раздела", "разделов"])}`;
-  elements.characterCount.textContent = `${text.length} ${pluralize(text.length, ["символ", "символа", "символов"])}`;
-  elements.durationEstimate.textContent = `≈ ${minutes} мин`;
+  elements.sectionCount.textContent = `${sections} ${pluralize(sections, [t("раздел"), t("раздела"), t("разделов")])}`;
+  elements.characterCount.textContent = `${text.length} ${pluralize(text.length, [t("символ"), t("символа"), t("символов")])}`;
+  elements.durationEstimate.textContent = t`≈ ${minutes} мин`;
   if (!state.speaking) state.totalWords = plan.totalWords;
   renderTextPreview(text, plan);
   if (state.activeSection >= 0) highlightSection(state.activeSection);
@@ -1399,9 +1401,9 @@ function updateTextMeta() {
 
 function updatePlayer(mode, message) {
   const labels = {
-    idle: ["▶", "Слушать"],
-    playing: ["❚❚", "Пауза"],
-    paused: ["▶", "Продолжить"],
+    idle: ["▶", t("Слушать")],
+    playing: ["❚❚", t("Пауза")],
+    paused: ["▶", t("Продолжить")],
   };
   const [icon, label] = labels[mode];
   elements.playIcon.textContent = icon;
@@ -1418,7 +1420,7 @@ function setProgress(word = 0) {
   elements.progressBar.style.width = `${percent}%`;
 }
 
-function stopSpeech(message = "Остановлено", preservePosition = true) {
+function stopSpeech(message = t("Остановлено"), preservePosition = true) {
   if (preservePosition && state.speaking && state.currentWord > 0) savePosition(state.currentWord, true);
   if (!preservePosition) resetSavedPosition();
   state.session += 1;
@@ -1446,7 +1448,7 @@ function stopSpeech(message = "Остановлено", preservePosition = true)
   state.totalWords = createQueue(elements.textInput.value).totalWords;
   state.seekWord = null;
   setProgress(state.resumeWord);
-  const resume = state.resumeWord > 0 ? ` · продолжить с ${timeForWord(state.resumeWord)}` : "";
+  const resume = state.resumeWord > 0 ? t` · продолжить с ${timeForWord(state.resumeWord)}` : "";
   updatePlayer("idle", `${message}${resume}`);
 }
 
@@ -1458,7 +1460,7 @@ function speakCurrent(session) {
     state.paused = false;
     resetSavedPosition();
     elements.progressBar.style.width = "100%";
-    updatePlayer("idle", "Готово — весь текст прочитан");
+    updatePlayer("idle", t("Готово — весь текст прочитан"));
     return;
   }
 
@@ -1492,7 +1494,7 @@ function speakCurrent(session) {
     highlightCurrentWord(state.currentWord, state.readMode);
     updatePlayer(
       "playing",
-      `Раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
+      t`Раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
     );
   };
 
@@ -1516,7 +1518,7 @@ function speakCurrent(session) {
 
   utterance.onerror = (event) => {
     if (session !== state.session || event.error === "canceled" || event.error === "interrupted") return;
-    stopSpeech("Не удалось воспроизвести этот голос");
+    stopSpeech(t("Не удалось воспроизвести этот голос"));
   };
 
   synth.speak(utterance);
@@ -1528,7 +1530,7 @@ function startSystemSpeech(startWord = 0) {
   const text = elements.textInput.value.trim();
   if (!text) {
     elements.textInput.focus();
-    updatePlayer("idle", "Сначала вставь текст");
+    updatePlayer("idle", t("Сначала вставь текст"));
     return;
   }
 
@@ -1545,7 +1547,7 @@ function startSystemSpeech(startWord = 0) {
   state.paused = false;
   savePosition(safeWord, true);
   setProgress(safeWord);
-  updatePlayer("playing", "Подготавливаю выбранный фрагмент…");
+  updatePlayer("playing", t("Подготавливаю выбранный фрагмент…"));
   speakCurrent(state.session);
 }
 
@@ -1556,7 +1558,7 @@ async function speakCurrentCloud(session) {
     state.paused = false;
     resetSavedPosition();
     elements.progressBar.style.width = "100%";
-    updatePlayer("idle", `Готово — весь текст прочитан через ${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))}`);
+    updatePlayer("idle", t`Готово — весь текст прочитан через ${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))}`);
     return;
   }
 
@@ -1572,7 +1574,7 @@ async function speakCurrentCloud(session) {
   setProgress(state.currentWord);
   highlightSection(item.sectionIndex, false);
   highlightCurrentWord(state.currentWord, state.readMode);
-  updatePlayer("playing", `${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))} готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
+  updatePlayer("playing", t`${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))} готовит раздел ${item.sectionIndex + 1} из ${item.sectionTotal}…`);
 
   try {
     state.cloudLoading = true;
@@ -1609,26 +1611,26 @@ async function speakCurrentCloud(session) {
       speakCurrent(session);
     };
     audio.onerror = () => {
-      if (session === state.session) stopSpeech("Не удалось воспроизвести аудио");
+      if (session === state.session) stopSpeech(t("Не удалось воспроизвести аудио"));
     };
 
     updatePlayer(
       "playing",
-      `${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))} · раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
+      t`${cloudProviderLabel(voiceForItem(state.queue[state.queueIndex]))} · раздел ${item.sectionIndex + 1} из ${item.sectionTotal} · фрагмент ${state.queueIndex + 1} из ${state.queue.length}`,
     );
     if (state.paused) {
-      updatePlayer("paused", "Аудио готово — нажми «Продолжить»");
+      updatePlayer("paused", t("Аудио готово — нажми «Продолжить»"));
       return;
     }
     try {
       await audio.play();
     } catch {
       state.paused = true;
-      updatePlayer("paused", "Аудио готово — нажми «Продолжить»");
+      updatePlayer("paused", t("Аудио готово — нажми «Продолжить»"));
     }
   } catch (error) {
     if (error.name !== "AbortError" && session === state.session) {
-      stopSpeech(error.message || "Облачный TTS временно недоступен");
+      stopSpeech(error.message || t("Облачный TTS временно недоступен"));
     }
   }
 }
@@ -1704,7 +1706,7 @@ function getCloudAudioBlob(text, voice = state.selectedVoice) {
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      throw new Error(result.error || `${cloudProviderLabel(voice)} не сгенерировал аудио`);
+      throw new Error(result.error || t`${cloudProviderLabel(voice)} не сгенерировал аудио`);
     }
     const blob = await response.blob();
     persistCloudAudio(text, voice, blob);
@@ -1738,15 +1740,15 @@ function openExportDialog() {
     : isCloudVoice();
 
   elements.exportSectionHint.textContent = sectionIndex >= 0
-    ? `Раздел ${sectionIndex + 1} · ${cloudSelected && state.selectedVoice.provider === "gemini" ? "WAV" : "MP3 или WAV"}`
-    : "Нет выбранного раздела";
+    ? t`Раздел ${sectionIndex + 1} · ${cloudSelected && state.selectedVoice.provider === "gemini" ? "WAV" : t("MP3 или WAV")}`
+    : t("Нет выбранного раздела");
   elements.exportSectionButton.disabled = !text || !cloudSelected || sectionIndex < 0;
   elements.exportAllButton.disabled = !text || !cloudSelected || estimatedMinutes > maxFullExportMinutes;
   elements.exportStatus.textContent = !cloudSelected
-    ? "Экспорт доступен для облачных голосов Gemini и Fish: Web Speech API не отдаёт готовый аудиофайл."
+    ? t("Экспорт доступен для облачных голосов Gemini и Fish: Web Speech API не отдаёт готовый аудиофайл.")
     : estimatedMinutes > maxFullExportMinutes
-      ? `Весь текст длиннее ${maxFullExportMinutes} минут — экспортируй его по разделам, чтобы браузеру хватило памяти.`
-      : "Готовые фрагменты будут взяты из локального кэша.";
+      ? t`Весь текст длиннее ${maxFullExportMinutes} минут — экспортируй его по разделам, чтобы браузеру хватило памяти.`
+      : t("Готовые фрагменты будут взяты из локального кэша.");
   elements.exportDialog.hidden = false;
   elements.exportBackdrop.hidden = false;
   elements.exportClose.focus();
@@ -1815,13 +1817,13 @@ async function exportFishItems(items, filenameBase) {
 
   try {
     if (items.length === 1) {
-      elements.exportStatus.textContent = "Готовлю аудиофайл…";
+      elements.exportStatus.textContent = t("Готовлю аудиофайл…");
       const blob = await getCloudAudioBlob(items[0].text, voiceForItem(items[0]));
       const extension = voiceForItem(items[0]).provider === "gemini" ? "wav" : "mp3";
       downloadAudioBlob(blob, `${filenameBase}.${extension}`);
     } else {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) throw new Error("Этот браузер не умеет собирать WAV-файлы");
+      if (!AudioContextClass) throw new Error(t("Этот браузер не умеет собирать WAV-файлы"));
       audioContext = new AudioContextClass();
       const sampleRate = 44_100;
       const pcmParts = [];
@@ -1829,7 +1831,7 @@ async function exportFishItems(items, filenameBase) {
       let dataSize = 0;
 
       for (let index = 0; index < items.length; index += 1) {
-        elements.exportStatus.textContent = `Готовлю фрагмент ${index + 1} из ${items.length}…`;
+        elements.exportStatus.textContent = t`Готовлю фрагмент ${index + 1} из ${items.length}…`;
         const blob = await getCloudAudioBlob(items[index].text, voiceForItem(items[index]));
         const decoded = await audioContext.decodeAudioData(await blob.arrayBuffer());
         const pcm = pcmBytesFromAudioBuffer(decoded, sampleRate);
@@ -1844,11 +1846,11 @@ async function exportFishItems(items, filenameBase) {
       const wav = new Blob([createWavHeader(dataSize, sampleRate), ...pcmParts], { type: "audio/wav" });
       downloadAudioBlob(wav, `${filenameBase}.wav`);
     }
-    elements.exportStatus.textContent = "Аудиофайл готов и скачан.";
+    elements.exportStatus.textContent = t("Аудиофайл готов и скачан.");
   } catch (error) {
     elements.exportStatus.textContent = error.name === "AbortError"
-      ? "Экспорт остановлен. Попробуй ещё раз."
-      : error.message || "Не удалось подготовить аудиофайл";
+      ? t("Экспорт остановлен. Попробуй ещё раз.")
+      : error.message || t("Не удалось подготовить аудиофайл");
   } finally {
     await audioContext?.close().catch(() => {});
     state.exporting = false;
@@ -1891,7 +1893,7 @@ function startCloudSpeech(startWord = 0) {
   const text = elements.textInput.value.trim();
   if (!text) {
     elements.textInput.focus();
-    updatePlayer("idle", "Сначала вставь текст");
+    updatePlayer("idle", t("Сначала вставь текст"));
     return;
   }
 
@@ -1925,7 +1927,7 @@ function startCloudSpeech(startWord = 0) {
 
 function startSpeech(startWord = 0) {
   if (state.roleMode && !rolesReady()) {
-    updatePlayer("idle", "Выбери доступный голос для каждой роли");
+    updatePlayer("idle", t("Выбери доступный голос для каждой роли"));
     if (!state.childLocked) {
       document.querySelector("#rolesSettings").scrollIntoView({ behavior: "smooth", block: "center" });
       const missing = [...document.querySelectorAll(".role-voice-button")].find((button) => !roleVoiceAvailable(voiceForItem({ role: button.dataset.role })));
@@ -1947,7 +1949,7 @@ async function pasteText() {
   try {
     const clipboardText = await navigator.clipboard.readText();
     if (!clipboardText) {
-      updatePlayer("idle", "В буфере обмена нет текста");
+      updatePlayer("idle", t("В буфере обмена нет текста"));
       return;
     }
     const start = elements.textInput.selectionStart;
@@ -1955,10 +1957,10 @@ async function pasteText() {
     elements.textInput.setRangeText(clipboardText, start, end, "end");
     elements.textInput.dispatchEvent(new Event("input", { bubbles: true }));
     setReadMode(true);
-    updatePlayer("idle", "Текст вставлен и сохранён");
+    updatePlayer("idle", t("Текст вставлен и сохранён"));
   } catch {
     elements.textInput.focus();
-    updatePlayer("idle", "Доступ к буферу закрыт — нажми ⌘V или Ctrl+V");
+    updatePlayer("idle", t("Доступ к буферу закрыт — нажми ⌘V или Ctrl+V"));
   }
 }
 
@@ -1968,14 +1970,14 @@ async function handlePlay() {
   } else if (state.paused) {
     if (state.cloudLoading) {
       state.paused = false;
-      updatePlayer("playing", "Подготавливаю выбранный фрагмент…");
+      updatePlayer("playing", t("Подготавливаю выбранный фрагмент…"));
       return;
     }
     if (isCloudVoice(voiceForItem(state.queue[state.queueIndex])) && state.fishAudio) {
       try {
         await state.fishAudio.play();
       } catch {
-        updatePlayer("paused", "Браузер не разрешил запуск аудио");
+        updatePlayer("paused", t("Браузер не разрешил запуск аудио"));
         return;
       }
     } else {
@@ -1987,7 +1989,7 @@ async function handlePlay() {
     if (isCloudVoice(voiceForItem(state.queue[state.queueIndex]))) state.fishAudio?.pause();
     else synth.pause();
     state.paused = true;
-    updatePlayer("paused", "Воспроизведение на паузе");
+    updatePlayer("paused", t("Воспроизведение на паузе"));
   }
 }
 
@@ -2010,7 +2012,7 @@ function loadVoices() {
     name: voice.name,
     lang: voice.lang,
     isDefault: voice.default,
-    meta: `${languageLabel(voice.lang)} · ${voice.lang}${voice.localService ? " · на устройстве" : " · системный онлайн"}`,
+    meta: `${languageLabel(voice.lang)} · ${voice.lang}${voice.localService ? t(" · на устройстве") : t(" · системный онлайн")}`,
   }));
   state.voiceChoices = [
     ...systemChoices,
@@ -2066,7 +2068,7 @@ async function initialize() {
     try {
       sharedText = await loadSharedTextFromUrl();
     } catch (error) {
-      shareLoadError = error.message || "Не удалось открыть общую ссылку";
+      shareLoadError = error.message || t("Не удалось открыть общую ссылку");
     }
   }
 
@@ -2102,9 +2104,9 @@ async function initialize() {
   }
   if (state.resumeWord > 0) {
     setProgress(state.resumeWord);
-    updatePlayer("idle", `Продолжить с ${timeForWord(state.resumeWord)}`);
+    updatePlayer("idle", t`Продолжить с ${timeForWord(state.resumeWord)}`);
   } else if (sharedText !== null) {
-    updatePlayer("idle", "Общий текст загружен — можно слушать");
+    updatePlayer("idle", t("Общий текст загружен — можно слушать"));
   } else if (shareLoadError) {
     updatePlayer("idle", shareLoadError);
   }
@@ -2116,15 +2118,15 @@ async function initialize() {
   await Promise.all([loadFishStatus(), loadGeminiStatus()]);
 
   if (!supportsSpeech && !state.fishAvailable && !state.geminiAvailable) {
-    elements.voicePickerName.textContent = "Голоса недоступны";
+    elements.voicePickerName.textContent = t("Голоса недоступны");
     elements.playButton.disabled = true;
-    updatePlayer("idle", "Открой Voicy в Chrome, Edge или Safari");
+    updatePlayer("idle", t("Открой Voicy в Chrome, Edge или Safari"));
     return;
   }
 }
 
 elements.textInput.addEventListener("input", () => {
-  if (state.speaking) stopSpeech("Текст изменён — можно слушать заново", false);
+  if (state.speaking) stopSpeech(t("Текст изменён — можно слушать заново"), false);
   else resetSavedPosition();
   updateTextMeta();
 });
@@ -2219,7 +2221,7 @@ elements.textPreview.addEventListener("keydown", (event) => {
 });
 
 elements.clearButton.addEventListener("click", () => {
-  stopSpeech("Текст очищен", false);
+  stopSpeech(t("Текст очищен"), false);
   elements.textInput.value = "";
   updateTextMeta();
   setReadMode(false, true);
@@ -2347,7 +2349,7 @@ function rolesReady(text = elements.textInput.value, voices = state.roleVoices) 
 
 const rolesDialog = document.querySelector("#rolesDialog");
 const rolesPrompt = document.querySelector("#rolesPrompt");
-rolesPrompt.value = `Подготовь следующий текст для озвучивания по ролям. Сохрани исходные реплики, их порядок и язык. Каждую реплику начинай с новой строки с меткой (Человек 1), (Человек 2) и так далее; если имена известны, используй (Анна), (Иван). Для одного участника всегда используй одну и ту же метку. Авторский текст помечай (Рассказчик). Не добавляй Markdown, пояснения или список участников. Пример:
+rolesPrompt.value = t`Подготовь следующий текст для озвучивания по ролям. Сохрани исходные реплики, их порядок и язык. Каждую реплику начинай с новой строки с меткой (Человек 1), (Человек 2) и так далее; если имена известны, используй (Анна), (Иван). Для одного участника всегда используй одну и ту же метку. Авторский текст помечай (Рассказчик). Не добавляй Markdown, пояснения или список участников. Пример:
 (Человек 1) Привет!
 (Человек 2) Привет, как дела?
 (Человек 1) Хорошо!
@@ -2360,7 +2362,7 @@ function syncRolesButton() {
   document.querySelector("#rolesSettingsToggle").checked = state.roleMode;
   const button = document.querySelector("#rolesButton");
   button.setAttribute("aria-pressed", String(state.roleMode));
-  button.textContent = state.roleMode ? "По ролям · включено" : "Читать по ролям";
+  button.textContent = state.roleMode ? t("По ролям · включено") : t("Читать по ролям");
 }
 
 function renderRoleChoices() {
@@ -2374,13 +2376,13 @@ function renderRoleChoices() {
   container.replaceChildren();
   if (!state.roleMode) return;
   const names = [...new Set(parseRoles(elements.textInput.value).map((turn) => turn.role))];
-  document.querySelector("#rolesCount").textContent = `${names.length} ${pluralize(names.length, ["роль", "роли", "ролей"])}`;
+  document.querySelector("#rolesCount").textContent = `${names.length} ${pluralize(names.length, [t("роль"), t("роли"), t("ролей")])}`;
   const hasMarkers = elements.textInput.value.split(/\r?\n/).some((line) => matchRoleLine(line));
   document.querySelector("#rolesExplanation").textContent = !names.length
-    ? "Вставь текст с метками (Анна) и (Иван) — здесь появится выбор голоса для каждого участника."
+    ? t("Вставь текст с метками (Анна) и (Иван) — здесь появится выбор голоса для каждого участника.")
     : !hasMarkers
-      ? "Метки участников не найдены: пока весь текст читает Рассказчик. Добавь перед репликами (Анна), (Иван) или подготовь текст с помощью запроса в попапе."
-      : "Для каждого участника — своё имя и голос с поиском. Имена и метки не произносятся. Запуск — кнопкой «Слушать».";
+      ? t("Метки участников не найдены: пока весь текст читает Рассказчик. Добавь перед репликами (Анна), (Иван) или подготовь текст с помощью запроса в попапе.")
+      : t("Для каждого участника — своё имя и голос с поиском. Имена и метки не произносятся. Запуск — кнопкой «Слушать».");
   for (const name of names) {
     const voice = voiceForItem({ role: name });
     const field = document.createElement("div");
@@ -2390,15 +2392,15 @@ function renderRoleChoices() {
     const nameInput = document.createElement("input");
     nameInput.className = "role-name-input";
     nameInput.type = "text";
-    nameInput.value = state.roleNames[name] || name;
+    nameInput.value = state.roleNames[name] || (name === "Рассказчик" ? t("Рассказчик") : name);
     nameInput.maxLength = 80;
     nameInput.disabled = state.childLocked;
-    nameInput.setAttribute("aria-label", `Имя участника: ${name}`);
+    nameInput.setAttribute("aria-label", t`Имя участника: ${name}`);
     nameInput.addEventListener("change", () => {
       state.roleNames[name] = nameInput.value.trim() || name;
       nameInput.value = state.roleNames[name];
       storage.set("roleNames", JSON.stringify(state.roleNames));
-      button.setAttribute("aria-label", `Выбрать голос: ${state.roleNames[name]}`);
+      button.setAttribute("aria-label", t`Выбрать голос: ${state.roleNames[name]}`);
       renderTextPreview(elements.textInput.value);
     });
     const button = document.createElement("button");
@@ -2408,12 +2410,12 @@ function renderRoleChoices() {
     button.disabled = state.childLocked;
     button.setAttribute("aria-expanded", "false");
     button.setAttribute("aria-controls", "voicePickerPanel");
-    button.setAttribute("aria-label", `Выбрать голос: ${state.roleNames[name] || name}`);
+    button.setAttribute("aria-label", t`Выбрать голос: ${state.roleNames[name] || name}`);
     const copy = document.createElement("span");
     const title = document.createElement("strong");
-    title.textContent = state.roleVoices[name] ? voice.name : "Голос по умолчанию";
+    title.textContent = state.roleVoices[name] ? voice.name : t("Голос по умолчанию");
     const meta = document.createElement("small");
-    meta.textContent = voice && !roleVoiceAvailable(voice) ? "Голос недоступен — выбери другой" : (voice?.meta || "Поиск по имени и языку");
+    meta.textContent = voice && !roleVoiceAvailable(voice) ? t("Голос недоступен — выбери другой") : (voice?.meta || t("Поиск по имени и языку"));
     copy.append(title, meta);
     const arrow = document.createElement("span");
     arrow.textContent = "↓";
@@ -2426,7 +2428,7 @@ function renderRoleChoices() {
     const reset = document.createElement("button");
     reset.type = "button";
     reset.className = "text-button";
-    reset.textContent = "Вернуть голос по умолчанию";
+    reset.textContent = t("Вернуть голос по умолчанию");
     reset.hidden = !state.roleVoices[name];
     reset.disabled = state.childLocked;
     reset.addEventListener("click", () => {
@@ -2453,24 +2455,24 @@ document.querySelector("#rolesClose").addEventListener("click", () => rolesDialo
 document.querySelector("#rolesCopy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(rolesPrompt.value);
-    document.querySelector("#rolesStatus").textContent = "Запрос скопирован — вставь его в свой ИИ-чат вместе с исходным текстом.";
+    document.querySelector("#rolesStatus").textContent = t("Запрос скопирован — вставь его в свой ИИ-чат вместе с исходным текстом.");
   } catch {
     rolesPrompt.select();
-    document.querySelector("#rolesStatus").textContent = "Скопируй выделенный запрос: Ctrl+C или ⌘C.";
+    document.querySelector("#rolesStatus").textContent = t("Скопируй выделенный запрос: Ctrl+C или ⌘C.");
   }
 });
 function setRoleMode(enabled) {
   if (state.childLocked) return;
   closeVoicePicker();
-  stopSpeech(enabled ? "Чтение по ролям включено" : "Обычное чтение", false);
+  stopSpeech(enabled ? t("Чтение по ролям включено") : t("Обычное чтение"), false);
   state.roleMode = enabled;
   storage.set("roleMode", String(enabled));
   resetSavedPosition();
   syncRolesButton();
   updateTextMeta();
   document.querySelector("#rolesStatus").textContent = enabled
-    ? "Режим включён. Закрой окно — голоса участников находятся в настройках на странице."
-    : "Включено обычное чтение.";
+    ? t("Режим включён. Закрой окно — голоса участников находятся в настройках на странице.")
+    : t("Включено обычное чтение.");
 }
 
 document.querySelector("#rolesToggle").addEventListener("change", (event) => setRoleMode(event.target.checked));
@@ -2479,4 +2481,4 @@ document.querySelector("#rolesDisable").addEventListener("click", () => setRoleM
 
 initialize()
   .then(updateFloatingSettingsButton)
-  .catch(() => updatePlayer("idle", "Не удалось запустить Voicy"));
+  .catch(() => updatePlayer("idle", t("Не удалось запустить Voicy")));

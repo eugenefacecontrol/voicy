@@ -32,7 +32,9 @@ const base = process.env.VOICY_TEST_URL || 'http://localhost:8765/';
       return route.fulfill({ json: { enabled: true, available: true } });
     });
     const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
-    await page.goto(url);
+    const localizedUrl = new URL(url);
+    localizedUrl.searchParams.set("lang", "ru");
+    await page.goto(localizedUrl.href);
     await page.waitForFunction(() => state.voices.length === 2 && state.geminiAvailable);
     return page;
   }
