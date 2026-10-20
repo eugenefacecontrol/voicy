@@ -64,37 +64,16 @@ textarea:focus-visible {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
   color: inherit;
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
   text-decoration: none;
 }
 
-.brand-mark {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  width: 31px;
-  height: 31px;
-  padding: 5px;
-  border-radius: 50%;
-  background: var(--ink);
-}
-
-.brand-mark span {
+.brand-logo {
   display: block;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--paper);
+  width: clamp(168px, 23vw, 210px);
+  height: auto;
+  animation: voicy-logo-intro 2.5s cubic-bezier(.2, .8, .2, 1) both;
 }
-
-.brand-mark span:nth-child(1),
-.brand-mark span:nth-child(5) { height: 7px; }
-.brand-mark span:nth-child(2),
-.brand-mark span:nth-child(4) { height: 13px; }
-.brand-mark span:nth-child(3) { height: 19px; }
 
 .eyebrow,
 .step,
@@ -1094,18 +1073,26 @@ select {
   min-width: 0;
 }
 
-.status-dot {
+.player-brand {
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #8e8a83;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #fff8ef;
+  box-shadow: 0 4px 16px rgba(255, 92, 53, 0.12);
+  overflow: hidden;
 }
 
-.player.playing .status-dot {
-  background: var(--accent);
-  box-shadow: 0 0 0 7px rgba(255, 92, 53, 0.13);
-  animation: pulse 1.5s ease-in-out infinite;
+.player-brand img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.player.playing .player-brand img {
+  animation: voicy-speaking 1.4s ease-in-out infinite;
 }
 
 .status-label {
@@ -1252,6 +1239,34 @@ footer {
 
 @keyframes pulse {
   50% { opacity: 0.62; }
+}
+
+@keyframes voicy-logo-intro {
+  0% {
+    clip-path: inset(0 100% 0 0);
+    opacity: 0.25;
+    transform: translateX(-10px) scale(0.96);
+  }
+  68% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes voicy-speaking {
+  0%, 100% {
+    transform: scale(1);
+    filter: saturate(1);
+  }
+  50% {
+    transform: scale(1.055);
+    filter: saturate(1.18) brightness(1.035);
+  }
 }
 
 @media (max-width: 720px) {
@@ -1483,6 +1498,11 @@ footer {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .brand-logo,
+  .player.playing .player-brand img {
+    animation: none !important;
+  }
+
   *,
   *::before,
   *::after {
