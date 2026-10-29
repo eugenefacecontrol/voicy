@@ -1,6 +1,14 @@
 // UI language is deliberately URL-only; never inferred from browser or storage.
 const uiLang = new URLSearchParams(location.search).get("lang")?.toLowerCase() === "ru" ? "ru" : "en";
 const uiEnglish = {
+  "Мои тексты": "My texts",
+  "Новый текст": "New text",
+  "＋ Новый текст": "＋ New text",
+  "Название текста": "Text title",
+  "Продолжить": "Continue",
+  "Тексты и позиции сохраняются в этом браузере. Выбери текст, чтобы продолжить.": "Texts and listening positions stay in this browser. Choose a text to continue.",
+  "Не удалось сохранить библиотеку. Хранилище браузера недоступно или заполнено.": "Could not save your library. Browser storage is unavailable or full.",
+
   "Этот браузер не поддерживает сжатие ссылок": "This browser does not support link compression",
   "Этот браузер не поддерживает распаковку ссылки": "This browser does not support link decompression",
   "Неизвестный формат зашифрованной ссылки": "Unknown encrypted link format",

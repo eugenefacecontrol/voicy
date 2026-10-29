@@ -16,11 +16,12 @@
     <link rel="icon" type="image/png" sizes="48x48" href="assets/brand/favicon-48.png" />
     <link rel="icon" type="image/png" sizes="256x256" href="assets/brand/favicon-256.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/brand/voicy-icon-180.png" />
-    <link rel="stylesheet" href="styles.css?v=25" />
+    <link rel="stylesheet" href="styles.css?v=26" />
   </head>
   <body>
     <main class="shell">
       <header class="hero">
+        <button class="mode-button library-trigger" id="libraryButton" type="button" aria-label="Мои тексты" aria-haspopup="dialog" aria-expanded="false"><span aria-hidden="true">☰</span> <span>Мои тексты</span></button>
         <a class="brand" href="./" aria-label="Voicy — на главную">
           <img class="brand-logo" src="assets/brand/voicy-logo-horizontal.png" alt="Voicy — Text to Speech" width="200" height="60" />
         </a>
@@ -36,6 +37,8 @@
           <div>
             <p class="step">01 / Текст</p>
             <h2 id="editor-title">Что будем слушать?</h2>
+            <p id="activeTextTitle" class="active-text-title"></p>
+            <p id="libraryStorageStatus" role="status" hidden></p>
           </div>
           <div class="text-actions">
             <button class="mode-button" id="rolesButton" type="button" aria-pressed="false">Читать по ролям</button>
@@ -96,6 +99,16 @@
           <span id="durationEstimate">≈ 0 мин</span>
         </div>
       </section>
+
+      <dialog id="libraryDialog" class="library-dialog" aria-labelledby="libraryTitle">
+        <div class="share-dialog-head">
+          <h2 id="libraryTitle">Мои тексты</h2>
+          <button class="sections-close" id="libraryClose" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <p>Тексты и позиции сохраняются в этом браузере. Выбери текст, чтобы продолжить.</p>
+        <button class="mode-button" id="libraryNew" type="button">＋ Новый текст</button>
+        <div id="libraryList" class="library-list"></div>
+      </dialog>
 
       <dialog id="rolesDialog" class="roles-dialog" aria-labelledby="rolesTitle">
         <div class="share-dialog-head">
@@ -392,7 +405,8 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="i18n.js?v=25"></script>
-    <script src="app.js?v=25"></script>
+    <script src="i18n.js?v=26"></script>
+    <script src="library.js?v=26"></script>
+    <script src="app.js?v=26"></script>
   </body>
 </html>

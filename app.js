@@ -197,6 +197,7 @@ const storage = {
     } catch {
       // The app still works when storage is disabled.
     }
+    scheduleLibrarySave(key);
   },
   remove(key) {
     try {
@@ -204,6 +205,7 @@ const storage = {
     } catch {
       // The app still works when storage is disabled.
     }
+    scheduleLibrarySave(key);
   },
 };
 
@@ -712,6 +714,7 @@ function savePosition(word, force = false) {
 function resetSavedPosition() {
   state.resumeWord = 0;
   state.lastSavedWord = -1;
+  state.currentWord = 0;
   storage.remove("position");
 }
 
@@ -1093,6 +1096,8 @@ function applyChildLock(locked) {
   elements.pasteButton.disabled = state.childLocked;
   elements.clearButton.disabled = state.childLocked;
   elements.shareButton.disabled = state.childLocked;
+  document.querySelector("#libraryButton").disabled = state.childLocked;
+  if (state.childLocked) closeLibrary();
   elements.exportButton.disabled = state.childLocked;
   elements.voicePickerButton.disabled = state.childLocked;
   elements.fontSelect.disabled = state.childLocked;
@@ -2062,6 +2067,7 @@ async function initialize() {
   const savedLockHash = storage.get("childLockHash");
   const savedLockSalt = storage.get("childLockSalt");
   state.childLocked = storage.get("childLocked") === "true" && Boolean(savedLockHash && savedLockSalt);
+  initializeLibrary();
   let sharedText = null;
   let shareLoadError = "";
   if (!state.childLocked) {
@@ -2072,7 +2078,17 @@ async function initialize() {
     }
   }
 
-  if (sharedText !== null) applySharedSettings(sharedText.settings, sharedText.text);
+  if (sharedText !== null) {
+    const existing = library.entries.find((entry) => entry.text === sharedText.text);
+    if (existing) {
+      activateLibraryEntry(existing);
+      sharedText = null; // Reopening a link must not rewind a saved recording.
+    } else {
+      saveLibraryEntry();
+      activateLibraryEntry(makeLibraryEntry(sharedText.text));
+      applySharedSettings(sharedText.settings, sharedText.text);
+    }
+  }
   state.roleMode = storage.get("roleMode") === "true";
   try { state.roleVoices = Object.assign(Object.create(null), JSON.parse(storage.get("roleVoices", "{}"))); } catch {}
   try { state.roleNames = Object.assign(Object.create(null), JSON.parse(storage.get("roleNames", "{}"))); } catch {}
@@ -2097,6 +2113,8 @@ async function initialize() {
   const savedMode = storage.get("readMode");
   setReadMode(state.childLocked || (savedMode ? savedMode === "true" : Boolean(elements.textInput.value.trim())));
   applyChildLock(state.childLocked);
+  libraryReady = true;
+  saveLibraryEntry();
   const resumeItem = initialPlan.queue.find((item) => state.resumeWord < item.endWord);
   if (resumeItem) {
     highlightSection(resumeItem.sectionIndex);
@@ -2287,6 +2305,7 @@ elements.speedSlider.addEventListener("input", handleSpeedInput);
 elements.speedSlider.addEventListener("change", commitSpeedChange);
 
 window.addEventListener("beforeunload", () => {
+  flushLibrary();
   if (supportsSpeech) synth.cancel();
   state.fishAudio?.pause();
   if (state.fishObjectUrl) URL.revokeObjectURL(state.fishObjectUrl);
