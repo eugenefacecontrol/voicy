@@ -16,7 +16,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="assets/brand/favicon-48.png" />
     <link rel="icon" type="image/png" sizes="256x256" href="assets/brand/favicon-256.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="assets/brand/voicy-icon-180.png" />
-    <link rel="stylesheet" href="styles.css?v=26" />
+    <link rel="stylesheet" href="styles.css?v=27" />
   </head>
   <body>
     <main class="shell">
@@ -270,7 +270,17 @@
 
         <div class="setting-grid">
           <div class="field voice-field">
-            <span>Голос</span>
+            <div class="voice-id-control" id="voiceIdControl">
+              <button class="voice-id-trigger" type="button" aria-expanded="false" aria-controls="voiceIdPanel" aria-label="Показать ID выбранного голоса">
+                <span>Голос</span>
+                <small>Показать ID</small>
+              </button>
+              <div class="voice-id-panel" id="voiceIdPanel" hidden>
+                <span class="voice-id-provider"></span>
+                <code class="voice-id-value">Сначала выбери голос</code>
+                <button class="voice-id-copy" type="button" disabled>Копировать ID</button>
+              </div>
+            </div>
             <button class="voice-picker-button" id="voicePickerButton" type="button" aria-expanded="false" aria-controls="voicePickerPanel">
               <span>
                 <strong id="voicePickerName">Загрузка голосов…</strong>
@@ -405,8 +415,8 @@
       <span>Работает на Web Speech API</span>
     </footer>
 
-    <script src="i18n.js?v=26"></script>
+    <script src="i18n.js?v=27"></script>
     <script src="library.js?v=26"></script>
-    <script src="app.js?v=26"></script>
+    <script src="app.js?v=27"></script>
   </body>
 </html>

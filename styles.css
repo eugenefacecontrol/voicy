@@ -807,6 +807,110 @@ textarea::placeholder {
   position: relative;
 }
 
+.voice-id-control {
+  display: grid;
+  gap: 7px;
+}
+
+.voice-id-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.voice-id-trigger small {
+  color: var(--accent-dark);
+  font-family: "DM Mono", monospace;
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.voice-id-trigger:hover small,
+.voice-id-trigger:focus-visible small {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.voice-id-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 8px;
+  background: rgba(255, 250, 242, 0.72);
+}
+
+.voice-id-panel[hidden] {
+  display: none;
+}
+
+.voice-id-provider {
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: var(--accent-dark);
+  background: rgba(255, 92, 53, 0.1);
+  font-family: "DM Mono", monospace;
+  font-size: 0.56rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.voice-id-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 400;
+  user-select: all;
+}
+
+.voice-id-copy {
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: var(--ink);
+  background: transparent;
+  font-family: "DM Mono", monospace;
+  font-size: 0.56rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.voice-id-copy:disabled {
+  opacity: 0.45;
+}
+
+.voice-id-copy:not(:disabled):hover,
+.voice-id-copy:not(:disabled):focus-visible {
+  color: white;
+  background: var(--ink);
+}
+
+@media (max-width: 480px) {
+  .voice-id-panel {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .voice-id-copy {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
 .voice-picker-button {
   display: flex;
   align-items: center;

@@ -799,6 +799,104 @@ async function writePreviewClipboard(text) {
   if (!copied) throw new Error("copy failed");
 }
 
+function voiceProviderName(voice) {
+  if (voice?.provider === "fish") return "Fish";
+  if (voice?.provider === "gemini") return "Gemini";
+  return voice ? t("Системный") : "";
+}
+
+function closeVoiceIdPanels(except = null) {
+  document.querySelectorAll(".voice-id-control").forEach((control) => {
+    if (control === except) return;
+    control.querySelector(".voice-id-panel").hidden = true;
+    control.querySelector(".voice-id-trigger").setAttribute("aria-expanded", "false");
+    control.querySelector(".voice-id-trigger small").textContent = t("Показать ID");
+  });
+}
+
+function setupVoiceIdControl(control, getVoice) {
+  const trigger = control.querySelector(".voice-id-trigger");
+  const panel = control.querySelector(".voice-id-panel");
+  const provider = control.querySelector(".voice-id-provider");
+  const value = control.querySelector(".voice-id-value");
+  const copy = control.querySelector(".voice-id-copy");
+  const refresh = () => {
+    const voice = getVoice();
+    provider.textContent = voiceProviderName(voice);
+    provider.hidden = !voice;
+    value.textContent = voice?.id || t("Сначала выбери голос");
+    copy.disabled = !voice?.id;
+    copy.textContent = t("Копировать ID");
+  };
+
+  trigger.addEventListener("click", () => {
+    const willOpen = panel.hidden;
+    closeVoiceIdPanels(willOpen ? control : null);
+    refresh();
+    panel.hidden = !willOpen;
+    trigger.setAttribute("aria-expanded", String(willOpen));
+    trigger.setAttribute("aria-label", t(willOpen ? "Скрыть ID выбранного голоса" : "Показать ID выбранного голоса"));
+    trigger.querySelector("small").textContent = t(willOpen ? "Скрыть ID" : "Показать ID");
+  });
+  copy.addEventListener("click", async () => {
+    const id = getVoice()?.id;
+    if (!id) return;
+    try {
+      await writePreviewClipboard(id);
+      copy.textContent = t("ID скопирован");
+      navigator.vibrate?.(8);
+    } catch {
+      copy.textContent = t("Не удалось скопировать ID");
+    }
+    window.setTimeout(() => {
+      if (copy.isConnected) copy.textContent = t("Копировать ID");
+    }, 1600);
+  });
+  refresh();
+  return refresh;
+}
+
+let voiceIdControlSequence = 0;
+
+function createVoiceIdControl(getVoice) {
+  const control = document.createElement("div");
+  const trigger = document.createElement("button");
+  const label = document.createElement("span");
+  const hint = document.createElement("small");
+  const panel = document.createElement("div");
+  const provider = document.createElement("span");
+  const value = document.createElement("code");
+  const copy = document.createElement("button");
+  const panelId = `roleVoiceIdPanel-${++voiceIdControlSequence}`;
+
+  control.className = "voice-id-control";
+  trigger.type = "button";
+  trigger.className = "voice-id-trigger";
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-controls", panelId);
+  trigger.setAttribute("aria-label", t("Показать ID выбранного голоса"));
+  label.textContent = t("Голос");
+  hint.textContent = t("Показать ID");
+  trigger.append(label, hint);
+  panel.className = "voice-id-panel";
+  panel.id = panelId;
+  panel.hidden = true;
+  provider.className = "voice-id-provider";
+  value.className = "voice-id-value";
+  copy.type = "button";
+  copy.className = "voice-id-copy";
+  copy.textContent = t("Копировать ID");
+  panel.append(provider, value, copy);
+  control.append(trigger, panel);
+  setupVoiceIdControl(control, getVoice);
+  return control;
+}
+
+const refreshMainVoiceId = setupVoiceIdControl(
+  document.querySelector("#voiceIdControl"),
+  () => state.selectedVoice,
+);
+
 async function copyPreviewSection(section, button) {
   const text = section.querySelector(".preview-copy")?.textContent.trim() || "";
   if (!text) return;
@@ -1157,6 +1255,7 @@ function keepPinNumeric(event) {
 
 function openVoicePicker(role = null, trigger = elements.voicePickerButton) {
   if (state.childLocked) return;
+  closeVoiceIdPanels();
   closeVoicePicker();
   state.voicePickerRole = role;
   state.voicePickerTrigger = trigger;
@@ -1264,6 +1363,7 @@ function selectVoiceChoice(voice, restart = true) {
   }));
   elements.voicePickerName.textContent = voice.name;
   elements.voicePickerMeta.textContent = voice.meta;
+  refreshMainVoiceId();
   setVoiceGroupExpanded(voice.provider, true);
   renderVoiceChoices();
   closeVoicePicker();
@@ -2297,6 +2397,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !elements.voicePickerPanel.hidden) closeVoicePicker();
 });
 document.addEventListener("click", (event) => {
+  if (!event.target.closest(".voice-id-control")) closeVoiceIdPanels();
   if (!elements.voicePickerPanel.hidden && !event.target.closest(".voice-field")
     && !(state.voicePickerRole && event.target.closest("#playButton"))) closeVoicePicker();
 });
@@ -2456,7 +2557,8 @@ function renderRoleChoices() {
       renderRoleChoices();
       if (state.speaking) startSpeech(state.currentWord);
     });
-    field.append(label, nameInput, button, reset);
+    const voiceIdControl = createVoiceIdControl(() => voiceForItem({ role: name }));
+    field.append(label, nameInput, voiceIdControl, button, reset);
     container.append(field);
   }
 
